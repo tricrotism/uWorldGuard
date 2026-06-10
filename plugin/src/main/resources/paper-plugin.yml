@@ -1,0 +1,26 @@
+name: uWorldGuard
+description: $description
+version: '${version}'
+
+main: com.tricrotism.uworldguard.UWorldGuard
+loader: com.tricrotism.uworldguard.UWorldGuardLoader
+api-version: '26.1.2'
+load: STARTUP
+
+dependencies:
+    server:
+        PacketEvents:
+            load: BEFORE
+            required: false
+            join-classpath: true
+        WorldEdit:
+            load: BEFORE
+            required: false
+            join-classpath: true
+        PlaceholderAPI:
+            load: BEFORE
+            required: false
+            join-classpath: true
+
+authors: [ tricrotism ]
+website: https://tricrotism.com

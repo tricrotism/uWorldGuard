@@ -1,0 +1,13 @@
+# uWorldGuard messages.
+#
+# Each entry supports MiniMessage formatting (https://docs.advntr.dev/minimessage/) and, when
+# PlaceholderAPI is installed, %placeholder% values resolved against the receiving player.
+# Set an entry to "" (empty) or false to disable it.
+
+# Seconds a player must wait before the same message is shown to them again. 0 = no cooldown.
+cooldown-seconds: 3
+
+messages:
+    no-permission: "<red>You don't have permission to do that here."
+    entry-denied: "<red>You cannot enter this area."
+    exit-denied: "<red>You cannot leave this area."

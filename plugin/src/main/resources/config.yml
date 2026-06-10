@@ -1,0 +1,18 @@
+# uWorldGuard configuration
+
+storage:
+    # "yaml" (default, one file per world) or "sql".
+    type: yaml
+    # How often to flush dirty regions to disk, in minutes. 0 disables auto-save.
+    auto-save-minutes: 5
+    # SQL is optional and disabled by default. YAML is the safe default backend.
+    sql:
+        enabled: false
+        url: "jdbc:sqlite:plugins/uWorldGuard/regions.db"
+        user: ""
+        password: ""
+
+selection:
+    # Item used for the built-in selection wand when WorldEdit is not installed.
+    # When WorldEdit is present, its selection is used instead and this is ignored.
+    wand-item: WOODEN_AXE
