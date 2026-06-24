@@ -63,13 +63,16 @@ public final class RegionCommands {
         this.messages = messages;
     }
 
-    public void register() {
+    public void register(final Object... extraHandlers) {
         this.manager = PaperCommandManager
             .builder(PaperSimpleSenderMapper.simpleSenderMapper())
             .executionCoordinator(ExecutionCoordinator.simpleCoordinator())
             .buildOnEnable(plugin);
         final AnnotationParser<Source> parser = new AnnotationParser<>(manager, Source.class);
         parser.parse(this);
+        for (final Object handler : extraHandlers) {
+            parser.parse(handler);
+        }
     }
 
     @Command("uworldguard|uwg|worldguard|wg")

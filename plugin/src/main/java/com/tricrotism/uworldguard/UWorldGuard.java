@@ -5,6 +5,7 @@ import com.tricrotism.uworldguard.config.Settings;
 import com.tricrotism.uworldguard.gui.ChatInputListener;
 import com.tricrotism.uworldguard.gui.ChatInputService;
 import com.tricrotism.uworldguard.listeners.*;
+import com.tricrotism.uworldguard.migration.MigrationCommands;
 import com.tricrotism.uworldguard.region.RegionContainer;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
 import com.tricrotism.uworldguard.region.RegionQuery;
@@ -73,7 +74,8 @@ public final class UWorldGuard extends JavaPlugin {
             getServer().getPluginManager().registerEvents(wand, this);
         }
 
-        new RegionCommands(this, regionContainer, selection, chatInput, messages).register();
+        new RegionCommands(this, regionContainer, selection, chatInput, messages)
+            .register(new MigrationCommands(this, regionContainer));
 
         new HealService(this, regionContainer, query).start();
 
