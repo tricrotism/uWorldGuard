@@ -60,9 +60,11 @@ public final class UWorldGuard extends JavaPlugin {
         getServer().getPluginManager().registerEvents(
             new MovementListener(this, query, messages, collision, pearls), this);
         getServer().getPluginManager().registerEvents(new NaturalListener(query), this);
+        getServer().getPluginManager().registerEvents(new CropTrampleListener(query), this);
         getServer().getPluginManager().registerEvents(new EntityListener(query), this);
         getServer().getPluginManager().registerEvents(new PlayerStateListener(query), this);
         getServer().getPluginManager().registerEvents(new ItemUseListener(query, messages), this);
+        getServer().getPluginManager().registerEvents(new EndCrystalListener(query, messages), this);
         getServer().getPluginManager().registerEvents(new WorkbenchListener(query, messages), this);
         getServer().getPluginManager().registerEvents(new DeathListener(query), this);
         getServer().getPluginManager().registerEvents(new TravelListener(query), this);

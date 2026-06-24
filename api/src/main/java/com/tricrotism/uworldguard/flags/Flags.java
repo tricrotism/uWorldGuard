@@ -36,6 +36,8 @@ public final class Flags {
     public static final StateFlag SLEEP = register(FlagCategory.PROTECTION, new StateFlag("sleep", true));
     public static final StateFlag TNT = register(FlagCategory.PROTECTION, new StateFlag("tnt", true));
     public static final StateFlag LIGHTER = register(FlagCategory.PROTECTION, new StateFlag("lighter", true));
+    public static final StateFlag END_CRYSTAL_PLACE = register(FlagCategory.PROTECTION, new StateFlag("end-crystal-place", true));
+    public static final StateFlag END_CRYSTAL_INTERACT = register(FlagCategory.PROTECTION, new StateFlag("end-crystal-interact", true));
     public static final StateFlag ENTRY = register(FlagCategory.ENTRY, new StateFlag("entry", true));
     public static final StateFlag EXIT = register(FlagCategory.ENTRY, new StateFlag("exit", true));
 
@@ -59,6 +61,7 @@ public final class Flags {
     public static final StateFlag LEAF_DECAY = register(FlagCategory.ENVIRONMENT, new StateFlag("leaf-decay", true));
     public static final StateFlag CROP_GROWTH = register(FlagCategory.ENVIRONMENT, new StateFlag("crop-growth", true));
     public static final StateFlag VINE_GROWTH = register(FlagCategory.ENVIRONMENT, new StateFlag("vine-growth", true));
+    public static final StateFlag CROP_TRAMPLE = register(FlagCategory.ENVIRONMENT, new StateFlag("crop-trample", true));
 
     // Movement & teleport.
     public static final StateFlag ENDERPEARL = register(FlagCategory.MOVEMENT, new StateFlag("enderpearl", true));
@@ -78,6 +81,7 @@ public final class Flags {
     // Item-use control.
     public static final MaterialSetFlag DISABLE_COMPLETELY = register(FlagCategory.ITEMS, new MaterialSetFlag("disable-completely"));
     public static final BooleanFlag DISABLE_THROW = register(FlagCategory.ITEMS, new BooleanFlag("disable-throw"));
+    public static final StateFlag WIND_CHARGE = register(FlagCategory.ITEMS, new StateFlag("wind-charge", true));
     public static final StateFlag VILLAGER_TRADE = register(FlagCategory.ITEMS, new StateFlag("villager-trade", true));
     public static final StateFlag PERMIT_WORKBENCHES = register(FlagCategory.ITEMS, new StateFlag("permit-workbenches", true));
     public static final StateFlag INVENTORY_CRAFT = register(FlagCategory.ITEMS, new StateFlag("inventory-craft", true));

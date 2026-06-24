@@ -15,7 +15,6 @@ import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Vehicle;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -85,11 +84,13 @@ public final class MovementListener implements Listener {
         final boolean leaving = !toIds.containsAll(fromIds);
 
         if (!bypass && entering && !toSet.testState(Flags.ENTRY) && !isMember(toSet, uuid)) {
+            dismountIfRiding(player);
             event.setCancelled(true);
             messages.sendFlag(player, toSet.queryValue(Flags.ENTRY_DENY_MESSAGE), "entry-denied");
             return;
         }
         if (!bypass && leaving && !fromSet.testState(Flags.EXIT) && !isMember(fromSet, uuid)) {
+            dismountIfRiding(player);
             event.setCancelled(true);
             messages.sendFlag(player, fromSet.queryValue(Flags.EXIT_DENY_MESSAGE), "exit-denied");
             return;
@@ -120,10 +121,11 @@ public final class MovementListener implements Listener {
     }
 
     /**
-     * Entry/exit enforcement for players riding a living mount (pig, horse, strider). A mounted
-     * player produces no {@link PlayerMoveEvent}, so without this the access flags are bypassed.
-     * {@link EntityMoveEvent} is cancellable, so a denied crossing is simply cancelled. The
-     * {@code riddenMounts} fast-path keeps this near-free when nobody is riding anything.
+     * Entry/exit enforcement for a living mount (pig, horse, strider) carrying a rider whose crossing
+     * is not the one {@link #onMove} sees (the driver's crossing is, via the move-vehicle packet).
+     * {@link #deniedCrossing} ejects and teleports the denied rider out — a mounted player is glued to
+     * the vehicle, so a cancel alone does not hold them; the cancel here is just a cheap first stop.
+     * The {@code riddenMounts} fast-path keeps this near-free when nobody is riding anything.
      * Per-region effects and continuous state still ride on {@link #onMove}.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -142,22 +144,25 @@ public final class MovementListener implements Listener {
 
     /**
      * Same enforcement for boats and minecarts, which fire {@link VehicleMoveEvent} rather than
-     * {@link EntityMoveEvent}. Not cancellable, so a denied crossing is undone by teleporting the
-     * vehicle back to its previous position.
+     * {@link EntityMoveEvent}. {@link #deniedCrossing} ejects the denied rider and teleports them out.
+     * Vehicles register in {@code riddenMounts} on {@link EntityMountEvent} just like living mounts,
+     * so the guard skips the work for driverless boats/minecarts, which fire this event just as often.
      */
     @EventHandler(priority = EventPriority.HIGH)
     public void onVehicleMove(final VehicleMoveEvent event) {
-        final Location from = event.getFrom();
-        final Vehicle vehicle = event.getVehicle();
-        if (deniedCrossing(vehicle, from, event.getTo())) {
-            vehicle.teleportAsync(from);
+        if (riddenMounts.isEmpty() || !riddenMounts.contains(event.getVehicle().getUniqueId())) {
+            return;
         }
+        deniedCrossing(event.getVehicle(), event.getFrom(), event.getTo());
     }
 
     /**
-     * Shared entry/exit check for a moving vehicle/mount. Returns true when a non-bypassing player
-     * passenger would cross a region boundary they may not. Cheap guards first: same-block and
-     * no-boundary-change exits before any membership work.
+     * Shared entry/exit check for a moving vehicle/mount: every non-bypassing player passenger that
+     * would cross a region boundary it may not is ejected and teleported back to {@code from}. A
+     * mounted player is glued to the client-driven vehicle, so a plain cancel or a vehicle teleport
+     * does not hold them — dismounting does. Returns true if any rider was denied (so the mount path
+     * can also cancel its move). Cheap guards first: same-block and no-boundary-change exits before
+     * any membership work.
      */
     private boolean deniedCrossing(final Entity vehicle, final Location from, final Location to) {
         if (from.getBlockX() == to.getBlockX()
@@ -178,6 +183,7 @@ public final class MovementListener implements Listener {
             return false;
         }
 
+        List<Player> denied = null;
         for (final Entity passenger : passengers) {
             if (!(passenger instanceof Player player) || player.hasPermission(BYPASS)) {
                 continue;
@@ -185,14 +191,36 @@ public final class MovementListener implements Listener {
             final UUID uuid = player.getUniqueId();
             if (entering && !toSet.testState(Flags.ENTRY) && !isMember(toSet, uuid)) {
                 messages.sendFlag(player, toSet.queryValue(Flags.ENTRY_DENY_MESSAGE), "entry-denied");
-                return true;
-            }
-            if (leaving && !fromSet.testState(Flags.EXIT) && !isMember(fromSet, uuid)) {
+            } else if (leaving && !fromSet.testState(Flags.EXIT) && !isMember(fromSet, uuid)) {
                 messages.sendFlag(player, fromSet.queryValue(Flags.EXIT_DENY_MESSAGE), "exit-denied");
-                return true;
+            } else {
+                continue;
             }
+            if (denied == null) {
+                denied = new ArrayList<>(1);
+            }
+            denied.add(player);
         }
-        return false;
+        if (denied == null) {
+            return false;
+        }
+        for (final Player rider : denied) {
+            rider.leaveVehicle();
+            rider.teleportAsync(from);
+        }
+        return true;
+    }
+
+    /**
+     * A cancelled {@link PlayerMoveEvent} reverts an on-foot player, but a mounted one is glued to
+     * its vehicle — which the client drives — so the server's revert just snaps them back onto it.
+     * Dismounting first lets the cancel's position revert actually hold. The driver of a mount/vehicle
+     * produces this event through the move-vehicle packet, so this is the path that catches riding in.
+     */
+    private static void dismountIfRiding(final Player player) {
+        if (player.isInsideVehicle()) {
+            player.leaveVehicle();
+        }
     }
 
     /**

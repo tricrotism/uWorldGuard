@@ -21,8 +21,9 @@ import org.jspecify.annotations.NullMarked;
 
 /**
  * Item-use flags: {@code disable-completely} (right-click use, melee weapon, totem resurrect),
- * {@code disable-throw} (egg / snowball / ender pearl / xp bottle), {@code villager-trade}, and
- * {@code deny-item-drops} / {@code deny-item-pickup}. Each handler filters cheaply and returns fast.
+ * {@code disable-throw} (egg / snowball / ender pearl / xp bottle), {@code wind-charge},
+ * {@code villager-trade}, and {@code deny-item-drops} / {@code deny-item-pickup}. Each handler
+ * filters cheaply and returns fast.
  */
 @NullMarked
 public final class ItemUseListener implements Listener {
@@ -96,6 +97,22 @@ public final class ItemUseListener implements Listener {
             return;
         }
         if (Boolean.TRUE.equals(query.getApplicableRegions(player.getLocation()).queryValue(Flags.DISABLE_THROW))) {
+            event.setCancelled(true);
+            messages.send(player, "no-permission");
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onWindCharge(final ProjectileLaunchEvent event) {
+        if (!(event.getEntity() instanceof AbstractWindCharge windCharge)) {
+            return;
+        }
+
+        if (!(windCharge.getShooter() instanceof Player player) || player.hasPermission(BYPASS)) {
+            return;
+        }
+
+        if (!query.testState(player.getLocation(), Flags.WIND_CHARGE)) {
             event.setCancelled(true);
             messages.send(player, "no-permission");
         }
