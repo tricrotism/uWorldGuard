@@ -11,6 +11,10 @@ repositories {
 dependencies {
     // Paper API only (no NMS) — provides org.bukkit.* and the jspecify annotations.
     paperweight.paperDevBundle(libs.versions.paper.api.get())
+
+    // Caffeine — the per-chunk region cache compiles against it; provided at runtime by the
+    // plugin's PluginLoader (UWorldGuardLoader), which downloads it into the shared classloader.
+    compileOnly(libs.caffeine)
 }
 
 java {
