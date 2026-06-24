@@ -2,6 +2,7 @@ plugins {
     id("java-library")
     alias(libs.plugins.paperweight.userdev)
     alias(libs.plugins.run.paper)
+    alias(libs.plugins.shadow)
 }
 
 repositories {
@@ -17,6 +18,8 @@ dependencies {
 
     // Our own API — compiled against and bundled into the plugin jar (see the jar task).
     implementation(project(":api"))
+
+    implementation(libs.bstats.bukkit)
 
     // Cloud + Caffeine — downloaded at boot by the PluginLoader (UWorldGuardLoader), not shaded.
     compileOnly(libs.cloud.paper)
@@ -50,6 +53,20 @@ tasks {
     named<Jar>("jar") {
         dependsOn(":api:jar")
         from(project(":api").sourceSets["main"].output)
+    }
+
+    shadowJar {
+        dependsOn(":api:jar")
+        from(project(":api").sourceSets["main"].output)
+        configurations = project.configurations.runtimeClasspath.map { setOf(it) }
+        dependencies {
+            exclude { it.moduleGroup != "org.bstats" }
+        }
+        relocate("org.bstats", "com.tricrotism.uworldguard.metrics")
+    }
+
+    assemble {
+        dependsOn(shadowJar)
     }
 
     runServer {

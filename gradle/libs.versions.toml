@@ -4,6 +4,7 @@ minecraft = "26.1.2"
 
 paperweight-userdev = "2.0.0-beta.21"
 run-task = "3.0.2"
+shadow = "9.3.1"
 
 cloud-paper = "2.0.0-beta.15"
 cloud-annotations = "2.0.0"
@@ -12,6 +13,7 @@ worldedit = "7.3.8"
 placeholderapi = "2.11.6"
 invui = "2.1.0"
 caffeine = "3.1.8"
+bstats = "3.2.1"
 
 [libraries]
 cloud-paper = { module = "org.incendo:cloud-paper", version.ref = "cloud-paper" }
@@ -22,7 +24,9 @@ worldedit-core = { module = "com.sk89q.worldedit:worldedit-core", version.ref = 
 placeholderapi = { module = "me.clip:placeholderapi", version.ref = "placeholderapi" }
 invui = { module = "xyz.xenondevs.invui:invui", version.ref = "invui" }
 caffeine = { module = "com.github.ben-manes.caffeine:caffeine", version.ref = "caffeine" }
+bstats-bukkit = { module = "org.bstats:bstats-bukkit", version.ref = "bstats" }
 
 [plugins]
 paperweight-userdev = { id = "io.papermc.paperweight.userdev", version.ref = "paperweight-userdev" }
 run-paper = { id = "xyz.jpenilla.run-paper", version.ref = "run-task" }
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }

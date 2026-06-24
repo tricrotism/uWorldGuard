@@ -18,6 +18,7 @@ import com.tricrotism.uworldguard.storage.RegionStore;
 import com.tricrotism.uworldguard.storage.SqlRegionStore;
 import com.tricrotism.uworldguard.storage.YamlRegionStore;
 import com.tricrotism.uworldguard.text.MessageService;
+import org.bstats.bukkit.Metrics;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jspecify.annotations.NullMarked;
@@ -86,6 +87,9 @@ public final class UWorldGuard extends JavaPlugin {
             getServer().getAsyncScheduler().runAtFixedRate(this,
                 task -> regionContainer.saveAll(), period, period, TimeUnit.MINUTES);
         }
+
+        // bStats | https://bstats.org/plugin/bukkit/uWorldGuard/32190
+        new Metrics(this, 32190);
     }
 
     private RegionStore createStore(final Settings settings) {
