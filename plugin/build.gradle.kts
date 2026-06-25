@@ -56,6 +56,8 @@ tasks {
     }
 
     shadowJar {
+        archiveBaseName.set("uWorldGuard")
+        archiveClassifier.set("")
         dependsOn(":api:jar")
         from(project(":api").sourceSets["main"].output)
         configurations = project.configurations.runtimeClasspath.map { setOf(it) }
@@ -76,9 +78,11 @@ tasks {
 
     processResources {
         val props = mapOf(
-            "version" to version,
+            "version" to version.toString(),
             "description" to (rootProject.description ?: "")
         )
+
+        inputs.properties(props)
         filesMatching("paper-plugin.yml") {
             expand(props)
         }

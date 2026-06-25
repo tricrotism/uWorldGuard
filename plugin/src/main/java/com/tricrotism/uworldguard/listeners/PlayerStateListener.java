@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.listeners;
 
+import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.region.ApplicableRegionSet;
 import com.tricrotism.uworldguard.region.RegionQuery;
@@ -33,16 +34,22 @@ public final class PlayerStateListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onSleep(final PlayerBedEnterEvent event) {
-        if (event.getPlayer().hasPermission(BYPASS)) {
+        if (EventGate.disabled(event)) {
             return;
         }
-        if (!query.testState(event.getBed().getLocation(), Flags.SLEEP)) {
+        if (!query.testState(event.getBed(), Flags.SLEEP)) {
+            if (event.getPlayer().hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onTeleport(final PlayerTeleportEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         if (event.getTo() == null) {
             return;
         }
@@ -51,41 +58,56 @@ public final class PlayerStateListener implements Listener {
             case "CHORUS_FRUIT" -> Flags.CHORUS_TELEPORT;
             default -> null;
         };
-        if (flag != null && !event.getPlayer().hasPermission(BYPASS)
-            && !query.testState(event.getTo(), flag)) {
+        if (flag != null && !query.testState(event.getTo(), flag)
+            && !event.getPlayer().hasPermission(BYPASS)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onChestAccess(final InventoryOpenEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         final Location location = event.getInventory().getLocation();
-        if (location == null || !(event.getPlayer() instanceof Player player) || player.hasPermission(BYPASS)) {
+        if (location == null || !(event.getPlayer() instanceof Player player)) {
             return;
         }
         final ApplicableRegionSet set = query.getApplicableRegions(location);
         if (!set.testState(Flags.CHEST_ACCESS) && !set.canBuild(player.getUniqueId())) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onRide(final VehicleEnterEvent event) {
-        if (!(event.getEntered() instanceof Player player) || player.hasPermission(BYPASS)) {
+        if (EventGate.disabled(event)) {
             return;
         }
-        final ApplicableRegionSet set = query.getApplicableRegions(event.getVehicle().getLocation());
+        if (!(event.getEntered() instanceof Player player)) {
+            return;
+        }
+        final ApplicableRegionSet set = query.getApplicableRegions(event.getVehicle());
         if (!set.testState(Flags.RIDE) && !set.canBuild(player.getUniqueId())) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onInvincible(final EntityDamageEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         if (!(event.getEntity() instanceof Player player)) {
             return;
         }
-        final ApplicableRegionSet set = query.getApplicableRegions(player.getLocation());
+        final ApplicableRegionSet set = query.getApplicableRegions(player);
         if (Boolean.TRUE.equals(set.queryValue(Flags.INVINCIBLE))
             || Boolean.TRUE.equals(set.queryValue(Flags.GODMODE))) {
             event.setCancelled(true);
@@ -94,11 +116,14 @@ public final class PlayerStateListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onItemDamage(final PlayerItemDamageEvent event) {
-        final Player player = event.getPlayer();
-        if (player.hasPermission(BYPASS)) {
+        if (EventGate.disabled(event)) {
             return;
         }
-        if (!query.testState(player.getLocation(), Flags.ITEM_DURABILITY)) {
+        final Player player = event.getPlayer();
+        if (!query.testState(player, Flags.ITEM_DURABILITY)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
         }
     }

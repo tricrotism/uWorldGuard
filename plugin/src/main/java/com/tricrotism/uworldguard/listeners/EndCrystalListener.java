@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.listeners;
 
+import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.region.RegionQuery;
 import com.tricrotism.uworldguard.text.MessageService;
@@ -35,14 +36,20 @@ public final class EndCrystalListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlace(final EntityPlaceEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         if (!(event.getEntity() instanceof EnderCrystal crystal)) {
             return;
         }
         final Player player = event.getPlayer();
-        if (player == null || player.hasPermission(BYPASS)) {
+        if (player == null) {
             return;
         }
-        if (!query.testState(crystal.getLocation(), Flags.END_CRYSTAL_PLACE)) {
+        if (!query.testState(crystal, Flags.END_CRYSTAL_PLACE)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
             messages.send(player, "no-permission");
         }
@@ -50,14 +57,20 @@ public final class EndCrystalListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onAttack(final EntityDamageByEntityEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         if (!(event.getEntity() instanceof EnderCrystal crystal)) {
             return;
         }
         final Player player = playerSource(event.getDamager());
-        if (player == null || player.hasPermission(BYPASS)) {
+        if (player == null) {
             return;
         }
-        if (!query.testState(crystal.getLocation(), Flags.END_CRYSTAL_INTERACT)) {
+        if (!query.testState(crystal, Flags.END_CRYSTAL_INTERACT)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
             messages.send(player, "no-permission");
         }

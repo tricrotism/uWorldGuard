@@ -1,6 +1,7 @@
 package com.tricrotism.uworldguard;
 
 import com.tricrotism.uworldguard.commands.RegionCommands;
+import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.config.Settings;
 import com.tricrotism.uworldguard.gui.ChatInputListener;
 import com.tricrotism.uworldguard.gui.ChatInputService;
@@ -39,6 +40,7 @@ public final class UWorldGuard extends JavaPlugin {
         saveDefaultConfig();
         final Settings settings = new Settings();
         settings.load(getConfig());
+        EventGate.load(getConfig());
 
         final RegionStore store = createStore(settings);
 

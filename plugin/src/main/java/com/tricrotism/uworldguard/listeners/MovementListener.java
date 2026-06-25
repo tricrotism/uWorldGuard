@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.listeners;
 
+import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.flags.State;
 import com.tricrotism.uworldguard.region.ApplicableRegionSet;
@@ -71,48 +72,52 @@ public final class MovementListener implements Listener {
             return;
         }
 
+        if (EventGate.disabled(event)) {
+            return;
+        }
         final Player player = event.getPlayer();
-        final UUID uuid = player.getUniqueId();
-        final boolean bypass = player.hasPermission(BYPASS);
-
         final ApplicableRegionSet fromSet = query.getApplicableRegions(from);
         final ApplicableRegionSet toSet = query.getApplicableRegions(to);
 
-        final Set<String> fromIds = idsOf(fromSet);
-        final Set<String> toIds = idsOf(toSet);
-        final boolean entering = !fromIds.containsAll(toIds);
-        final boolean leaving = !toIds.containsAll(fromIds);
+        final boolean entering = !isInside(fromSet, toSet);
+        final boolean leaving = !isInside(toSet, fromSet);
 
-        if (!bypass && entering && !toSet.testState(Flags.ENTRY) && !isMember(toSet, uuid)) {
-            dismountIfRiding(player);
-            event.setCancelled(true);
-            messages.sendFlag(player, toSet.queryValue(Flags.ENTRY_DENY_MESSAGE), "entry-denied");
-            return;
-        }
-        if (!bypass && leaving && !fromSet.testState(Flags.EXIT) && !isMember(fromSet, uuid)) {
-            dismountIfRiding(player);
-            event.setCancelled(true);
-            messages.sendFlag(player, fromSet.queryValue(Flags.EXIT_DENY_MESSAGE), "exit-denied");
-            return;
-        }
+        if (entering || leaving) {
+            final UUID uuid = player.getUniqueId();
+            final boolean bypass = player.hasPermission(BYPASS);
+            final Set<String> fromIds = idsOf(fromSet);
+            final Set<String> toIds = idsOf(toSet);
 
-        if (!bypass && entering && !isMember(toSet, uuid) && levelDenied(player, toSet)) {
-            event.setCancelled(true);
-            messages.send(player, "entry-denied");
-            return;
-        }
+            if (!bypass && entering && !toSet.testState(Flags.ENTRY) && !isMember(toSet, uuid)) {
+                dismountIfRiding(player);
+                event.setCancelled(true);
+                messages.sendFlag(player, toSet.queryValue(Flags.ENTRY_DENY_MESSAGE), "entry-denied");
+                return;
+            }
+            if (!bypass && leaving && !fromSet.testState(Flags.EXIT) && !isMember(fromSet, uuid)) {
+                dismountIfRiding(player);
+                event.setCancelled(true);
+                messages.sendFlag(player, fromSet.queryValue(Flags.EXIT_DENY_MESSAGE), "exit-denied");
+                return;
+            }
+            if (!bypass && entering && !isMember(toSet, uuid) && levelDenied(player, toSet)) {
+                event.setCancelled(true);
+                messages.send(player, "entry-denied");
+                return;
+            }
 
-        if (entering) {
-            for (final ProtectedRegion region : toSet.getRegions()) {
-                if (!fromIds.contains(region.getId())) {
-                    onEnterRegion(player, region);
+            if (entering) {
+                for (final ProtectedRegion region : toSet.getRegions()) {
+                    if (!fromIds.contains(region.getId())) {
+                        onEnterRegion(player, region);
+                    }
                 }
             }
-        }
-        if (leaving) {
-            for (final ProtectedRegion region : fromSet.getRegions()) {
-                if (!toIds.contains(region.getId())) {
-                    onLeaveRegion(player, region);
+            if (leaving) {
+                for (final ProtectedRegion region : fromSet.getRegions()) {
+                    if (!toIds.contains(region.getId())) {
+                        onLeaveRegion(player, region);
+                    }
                 }
             }
         }
@@ -137,6 +142,9 @@ public final class MovementListener implements Listener {
         if (!riddenMounts.contains(mount.getUniqueId())) {
             return;
         }
+        if (EventGate.disabled(event)) {
+            return;
+        }
         if (deniedCrossing(mount, event.getFrom(), event.getTo())) {
             event.setCancelled(true);
         }
@@ -151,6 +159,9 @@ public final class MovementListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH)
     public void onVehicleMove(final VehicleMoveEvent event) {
         if (riddenMounts.isEmpty() || !riddenMounts.contains(event.getVehicle().getUniqueId())) {
+            return;
+        }
+        if (EventGate.disabled(event)) {
             return;
         }
         deniedCrossing(event.getVehicle(), event.getFrom(), event.getTo());
@@ -230,12 +241,15 @@ public final class MovementListener implements Listener {
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onMount(final EntityMountEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         if (!(event.getEntity() instanceof Player player)) {
             return;
         }
         final Entity mount = event.getMount();
         if (!player.hasPermission(BYPASS)) {
-            final ApplicableRegionSet set = query.getApplicableRegions(mount.getLocation());
+            final ApplicableRegionSet set = query.getApplicableRegions(mount);
             if (!set.testState(Flags.ENTRY) && !isMember(set, player.getUniqueId())) {
                 event.setCancelled(true);
                 messages.sendFlag(player, set.queryValue(Flags.ENTRY_DENY_MESSAGE), "entry-denied");
@@ -449,8 +463,8 @@ public final class MovementListener implements Listener {
             return Set.of();
         }
         final Set<String> ids = HashSet.newHashSet(regions.size() * 2);
-        for (final ProtectedRegion region : regions) {
-            ids.add(region.getId());
+        for (int i = 0, n = regions.size(); i < n; i++) {
+            ids.add(regions.get(i).getId());
         }
         return ids;
     }
@@ -466,11 +480,22 @@ public final class MovementListener implements Listener {
 
     /**
      * True if every region in {@code inner} also appears in {@code outer} (no new boundary crossed).
+     * Both sets come from the same world's manager, so a shared region is the same object — the small
+     * lists are compared by identity directly, allocating nothing on the per-move hot path.
      */
     private static boolean isInside(final ApplicableRegionSet outer, final ApplicableRegionSet inner) {
-        final Set<String> outerIds = idsOf(outer);
-        for (final ProtectedRegion region : inner.getRegions()) {
-            if (!outerIds.contains(region.getId())) {
+        final List<ProtectedRegion> innerRegions = inner.getRegions();
+        final List<ProtectedRegion> outerRegions = outer.getRegions();
+        for (int i = 0, n = innerRegions.size(); i < n; i++) {
+            final ProtectedRegion region = innerRegions.get(i);
+            boolean matched = false;
+            for (int j = 0, m = outerRegions.size(); j < m; j++) {
+                if (outerRegions.get(j) == region) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
                 return false;
             }
         }

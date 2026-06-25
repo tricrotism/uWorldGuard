@@ -1,7 +1,5 @@
 package com.tricrotism.uworldguard.region;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import com.tricrotism.uworldguard.flags.Flag;
 import com.tricrotism.uworldguard.util.BlockVector3;
 import org.jspecify.annotations.NullMarked;
@@ -10,6 +8,7 @@ import org.jspecify.annotations.Nullable;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
  * Holds all regions for a single world. Thread-safe; queried from region threads and
@@ -18,11 +17,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>Applicable-region lookup is backed by a per-chunk candidate cache. The first query in a
  * chunk scans every region for those whose bounding box overlaps it and caches that (usually
  * tiny, often empty) list; later queries in the chunk test only those candidates. Wilderness
- * chunks cache a shared empty list, so the common no-region case is a single map lookup. The
+ * chunks cache a shared empty list, so the common no-region case is a single array-slot read. The
  * cache is dropped wholesale when a region is added or removed — bounds are immutable and
  * flag/priority/parent edits read through to the live region, so nothing else changes what
- * overlaps a chunk — and is size-capped to bound memory. A spatial index (R-tree) remains the
- * endgame for worlds with very many large, overlapping regions.
+ * overlaps a chunk — and is a fixed-capacity direct-mapped table (primitive {@code long} keys, no
+ * boxing) to bound memory. A spatial index (R-tree) remains the endgame for worlds with very many
+ * large, overlapping regions.
  */
 @NullMarked
 public final class RegionManager {
@@ -35,8 +35,10 @@ public final class RegionManager {
     private volatile boolean flagIndexStale = true;
     private volatile Set<Flag<?>> usedFlags = Set.of();
 
-    private static final int MAX_CACHED_CHUNKS = 16384;
-    private volatile Cache<Long, List<ProtectedRegion>> chunkIndex = newChunkCache();
+    private static final int CHUNK_CACHE_BITS = 14;
+    private static final int CHUNK_CACHE_SLOTS = 1 << CHUNK_CACHE_BITS; // 16384
+    private static final long CHUNK_HASH_MULTIPLIER = 0x9E3779B97F4A7C15L; // fibonacci hashing
+    private volatile AtomicReferenceArray<@Nullable ChunkCandidates> chunkIndex = new AtomicReferenceArray<>(CHUNK_CACHE_SLOTS);
 
     public void addRegion(final ProtectedRegion region) {
         if (region instanceof GlobalProtectedRegion g) {
@@ -124,16 +126,27 @@ public final class RegionManager {
     }
 
     public ApplicableRegionSet getApplicableRegions(final BlockVector3 point) {
-        final int x = point.x();
-        final int y = point.y();
-        final int z = point.z();
-        final Cache<Long, List<ProtectedRegion>> cache = chunkIndex;
-        final List<ProtectedRegion> candidates = cache.get(chunkKey(x, z), this::buildChunkCandidates);
+        return getApplicableRegions(point.x(), point.y(), point.z());
+    }
+
+    public ApplicableRegionSet getApplicableRegions(final int x, final int y, final int z) {
+        final long key = chunkKey(x, z);
+        final AtomicReferenceArray<@Nullable ChunkCandidates> cache = chunkIndex;
+        final int slot = (int) ((key * CHUNK_HASH_MULTIPLIER) >>> (64 - CHUNK_CACHE_BITS));
+        final ChunkCandidates cached = cache.get(slot);
+        final List<ProtectedRegion> candidates;
+        if (cached != null && cached.key() == key) {
+            candidates = cached.regions();
+        } else {
+            candidates = buildChunkCandidates(key);
+            cache.set(slot, new ChunkCandidates(key, candidates));
+        }
         if (candidates.isEmpty()) {
             return emptySet();
         }
         List<ProtectedRegion> matches = null;
-        for (final ProtectedRegion region : candidates) {
+        for (int i = 0, n = candidates.size(); i < n; i++) {
+            final ProtectedRegion region = candidates.get(i);
             final BlockVector3 min = region.getMinimumPoint();
             final BlockVector3 max = region.getMaximumPoint();
             if (x < min.x() || x > max.x() || y < min.y() || y > max.y() || z < min.z() || z > max.z()) {
@@ -185,18 +198,23 @@ public final class RegionManager {
         return ((long) (x >> 4) << 32) | ((z >> 4) & 0xFFFFFFFFL);
     }
 
-    private static Cache<Long, List<ProtectedRegion>> newChunkCache() {
-        return Caffeine.newBuilder().maximumSize(MAX_CACHED_CHUNKS).build();
-    }
+    /**
+     * A published cache slot: the chunk key it answers for, and the regions whose XZ bounds overlap
+     * that chunk. The region list is a fresh snapshot never mutated after construction, so the record
+     * is safe to read without locking once stored via {@link AtomicReferenceArray#set} (a volatile
+     * write that publishes it).
+     */
+    private record ChunkCandidates(long key, List<ProtectedRegion> regions) {}
 
     /**
      * Drop the per-chunk cache on a region add/remove (which can change what overlaps a chunk).
-     * Assigns a fresh cache rather than clearing in place, so a query mid-build can never publish a
-     * stale candidate list — its load lands in the now-orphaned old cache. Caffeine bounds each
-     * cache to {@link #MAX_CACHED_CHUNKS}, evicting cold chunks on its own.
+     * Assigns a fresh table rather than clearing in place, so a query mid-build can never publish a
+     * stale candidate list — its store lands in the now-orphaned old table. The table is a
+     * fixed-capacity direct-mapped cache: a fresh chunk hashing to an occupied slot simply overwrites
+     * it, bounding memory without per-lookup boxing or eviction bookkeeping.
      */
     private void invalidateChunkIndex() {
-        chunkIndex = newChunkCache();
+        chunkIndex = new AtomicReferenceArray<>(CHUNK_CACHE_SLOTS);
     }
 
     /**

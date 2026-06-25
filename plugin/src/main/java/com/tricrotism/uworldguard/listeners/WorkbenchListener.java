@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.listeners;
 
+import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.flags.StateFlag;
 import com.tricrotism.uworldguard.region.RegionQuery;
@@ -15,6 +16,7 @@ import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.jspecify.annotations.NullMarked;
 
+import java.util.EnumSet;
 import java.util.Set;
 
 /**
@@ -26,7 +28,7 @@ public final class WorkbenchListener implements Listener {
 
     private static final String BYPASS = "uworldguard.bypass";
 
-    private static final Set<Material> WORKBENCHES = Set.of(
+    private static final Set<Material> WORKBENCHES = EnumSet.of(
         Material.CRAFTING_TABLE, Material.ANVIL, Material.CHIPPED_ANVIL, Material.DAMAGED_ANVIL,
         Material.ENDER_CHEST, Material.SMITHING_TABLE, Material.GRINDSTONE, Material.LOOM,
         Material.CARTOGRAPHY_TABLE, Material.STONECUTTER, Material.ENCHANTING_TABLE);
@@ -41,6 +43,9 @@ public final class WorkbenchListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onOpen(final PlayerInteractEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         if (event.getAction() != Action.RIGHT_CLICK_BLOCK) {
             return;
         }
@@ -49,10 +54,10 @@ public final class WorkbenchListener implements Listener {
             return;
         }
         final Player player = event.getPlayer();
-        if (player.hasPermission(BYPASS)) {
-            return;
-        }
-        if (!query.getApplicableRegions(block.getLocation()).testState(Flags.PERMIT_WORKBENCHES)) {
+        if (!query.getApplicableRegions(block).testState(Flags.PERMIT_WORKBENCHES)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
             messages.send(player, "no-permission");
         }
@@ -60,12 +65,18 @@ public final class WorkbenchListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onCraft(final CraftItemEvent event) {
-        if (!(event.getWhoClicked() instanceof Player player) || player.hasPermission(BYPASS)) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
+        if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
         final StateFlag flag = event.getInventory().getMatrix().length > 4
             ? Flags.PERMIT_WORKBENCHES : Flags.INVENTORY_CRAFT;
-        if (!query.getApplicableRegions(player.getLocation()).testState(flag)) {
+        if (!query.getApplicableRegions(player).testState(flag)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
             messages.send(player, "no-permission");
         }

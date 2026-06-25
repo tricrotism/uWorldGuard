@@ -1,6 +1,7 @@
 package com.tricrotism.uworldguard.commands;
 
 import com.tricrotism.uworldguard.UWorldGuard;
+import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.domain.DefaultDomain;
 import com.tricrotism.uworldguard.flags.BooleanFlag;
 import com.tricrotism.uworldguard.flags.Flag;
@@ -451,6 +452,7 @@ public final class RegionCommands {
     public void reload(final Source sender) {
         messages.reload();
         plugin.reloadConfig();
+        EventGate.load(plugin.getConfig());
         success(sender, "Reloaded messages and config. <gray>(Storage/wand changes need a restart.)");
     }
 

@@ -4,7 +4,6 @@ import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.region.ApplicableRegionSet;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
 import com.tricrotism.uworldguard.region.RegionQuery;
-import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.jspecify.annotations.NullMarked;
@@ -43,8 +42,7 @@ public final class HealService {
 
     @SuppressWarnings("deprecation")
     private void heal(final Player player) {
-        final Location loc = player.getLocation();
-        final ApplicableRegionSet regions = query.getApplicableRegions(loc);
+        final ApplicableRegionSet regions = query.getApplicableRegions(player);
         final Double amount = regions.queryValue(Flags.HEAL_AMOUNT);
         if (amount == null || amount == 0.0) {
             return;

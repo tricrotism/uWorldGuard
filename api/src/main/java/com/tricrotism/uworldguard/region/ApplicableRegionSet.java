@@ -75,7 +75,8 @@ public final class ApplicableRegionSet {
         final int topPriority = applicable.getFirst().getPriority();
         State explicit = null;
         boolean memberOfTop = false;
-        for (final ProtectedRegion region : applicable) {
+        for (int i = 0, n = applicable.size(); i < n; i++) {
+            final ProtectedRegion region = applicable.get(i);
             if (region.getPriority() != topPriority) {
                 break;
             }
@@ -99,8 +100,8 @@ public final class ApplicableRegionSet {
      * union: a region anywhere in the stack that lists the element wins, then the global fallback).
      */
     public <E> boolean flagSetContains(final Flag<Set<E>> flag, final E element) {
-        for (final ProtectedRegion region : applicable) {
-            final Set<E> set = region.getFlag(flag);
+        for (int i = 0, n = applicable.size(); i < n; i++) {
+            final Set<E> set = applicable.get(i).getFlag(flag);
             if (set != null && set.contains(element)) {
                 return true;
             }
@@ -113,8 +114,8 @@ public final class ApplicableRegionSet {
      * Resolve a typed (non-state) flag: highest-priority region that sets it wins.
      */
     public <T> @Nullable T queryValue(final Flag<T> flag) {
-        for (final ProtectedRegion region : applicable) {
-            final T v = region.getFlag(flag);
+        for (int i = 0, n = applicable.size(); i < n; i++) {
+            final T v = applicable.get(i).getFlag(flag);
             if (v != null) {
                 return v;
             }
@@ -126,7 +127,8 @@ public final class ApplicableRegionSet {
         boolean found = false;
         int bestPriority = 0;
         State result = null;
-        for (final ProtectedRegion region : applicable) {
+        for (int i = 0, n = applicable.size(); i < n; i++) {
+            final ProtectedRegion region = applicable.get(i);
             if (found && region.getPriority() < bestPriority) {
                 break;
             }

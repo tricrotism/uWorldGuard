@@ -16,3 +16,22 @@ selection:
     # Item used for the built-in selection wand when WorldEdit is not installed.
     # When WorldEdit is present, its selection is used instead and this is ignored.
     wand-item: WOODEN_AXE
+
+# Per-world event handling. By default uWorldGuard acts on every event in every world. Use this to
+# make it skip specific Bukkit events in a given world — handy when another plugin owns those
+# interactions there, or for creative/minigame worlds. Events are matched by their Bukkit class
+# simple name (e.g. BlockBreakEvent, PlayerInteractEvent). Skipping is a runtime no-op for that world
+# (Bukkit registers handlers globally, so they cannot truly be unregistered per world). Apply changes
+# live with /uwg reload. Example (uncomment to use):
+#worlds:
+#    test:
+#        events:
+#            # false = blacklist (skip the listed events); true = whitelist (act on ONLY the listed
+#            # events and skip every other in this world).
+#            whitelist-mode: false
+#            disabled:
+#                - BlockBreakEvent
+#                - BlockPlaceEvent
+#                - PlayerInteractEvent
+#                - EntityDamageEvent
+#                - EntityDamageByEntityEvent

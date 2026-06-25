@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.listeners;
 
+import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.flags.StateFlag;
 import com.tricrotism.uworldguard.region.RegionQuery;
@@ -28,44 +29,56 @@ public final class EntityListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onSpawn(final CreatureSpawnEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         if (!isNaturalSpawn(event.getSpawnReason())) return;
 
-        if (!query.testState(event.getLocation(), Flags.MOB_SPAWNING)) {
+        if (!query.testState(event.getEntity(), Flags.MOB_SPAWNING)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onExplode(final EntityExplodeEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         if (event.blockList().isEmpty()) {
             return;
         }
         final StateFlag flag = explosionFlag(event.getEntity());
 
-        event.blockList().removeIf(block -> !query.testState(block.getLocation(), flag));
+        event.blockList().removeIf(block -> !query.testState(block, flag));
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEndermanGrief(final EntityChangeBlockEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         if (event.getEntity() instanceof Enderman
-            && !query.testState(event.getBlock().getLocation(), Flags.ENDERMAN_GRIEF)) {
+            && !query.testState(event.getBlock(), Flags.ENDERMAN_GRIEF)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityDamage(final EntityDamageByEntityEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         final Entity victim = event.getEntity();
         final Entity damager = event.getDamager();
 
         if (victim instanceof Player && damager instanceof Mob
-            && !query.testState(victim.getLocation(), Flags.MOB_DAMAGE)) {
+            && !query.testState(victim, Flags.MOB_DAMAGE)) {
             event.setCancelled(true);
             return;
         }
 
         if (victim instanceof Animals && isPlayerSource(damager)
-            && !query.testState(victim.getLocation(), Flags.DAMAGE_ANIMALS)) {
+            && !query.testState(victim, Flags.DAMAGE_ANIMALS)) {
             event.setCancelled(true);
         }
     }

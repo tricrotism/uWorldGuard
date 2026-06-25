@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.listeners;
 
+import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.region.RegionQuery;
 import com.tricrotism.uworldguard.util.Locations;
@@ -26,12 +27,15 @@ public final class DeathListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onDeath(final PlayerDeathEvent event) {
-        final Location location = event.getEntity().getLocation();
-        if (Boolean.TRUE.equals(query.queryValue(location, Flags.KEEP_INVENTORY))) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
+        final Player victim = event.getEntity();
+        if (Boolean.TRUE.equals(query.queryValue(victim, Flags.KEEP_INVENTORY))) {
             event.setKeepInventory(true);
             event.getDrops().clear();
         }
-        if (Boolean.TRUE.equals(query.queryValue(location, Flags.KEEP_EXP))) {
+        if (Boolean.TRUE.equals(query.queryValue(victim, Flags.KEEP_EXP))) {
             event.setKeepLevel(true);
             event.setDroppedExp(0);
         }
@@ -39,8 +43,11 @@ public final class DeathListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onRespawn(final PlayerRespawnEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         final Player player = event.getPlayer();
-        final String value = query.queryValue(player.getLocation(), Flags.RESPAWN_LOCATION);
+        final String value = query.queryValue(player, Flags.RESPAWN_LOCATION);
         if (value == null) {
             return;
         }

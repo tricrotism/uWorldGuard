@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.listeners;
 
+import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.region.RegionQuery;
 import org.bukkit.Material;
@@ -30,6 +31,9 @@ public final class CropTrampleListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlayerTrample(final PlayerInteractEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         if (event.getAction() != Action.PHYSICAL) {
             return;
         }
@@ -38,21 +42,24 @@ public final class CropTrampleListener implements Listener {
             return;
         }
         final Player player = event.getPlayer();
-        if (player.hasPermission(BYPASS)) {
-            return;
-        }
-        if (!query.testState(block.getLocation(), Flags.CROP_TRAMPLE)) {
+        if (!query.testState(block, Flags.CROP_TRAMPLE)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onEntityTrample(final EntityInteractEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         final Block block = event.getBlock();
         if (block == null || block.getType() != Material.FARMLAND) {
             return;
         }
-        if (!query.testState(block.getLocation(), Flags.CROP_TRAMPLE)) {
+        if (!query.testState(block, Flags.CROP_TRAMPLE)) {
             event.setCancelled(true);
         }
     }

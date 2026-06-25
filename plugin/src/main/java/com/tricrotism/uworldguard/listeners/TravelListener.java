@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.listeners;
 
+import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.region.RegionQuery;
 import org.bukkit.entity.Entity;
@@ -29,32 +30,47 @@ public final class TravelListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onGlide(final EntityToggleGlideEvent event) {
-        if (!event.isGliding() || !(event.getEntity() instanceof Player player) || player.hasPermission(BYPASS)) {
+        if (EventGate.disabled(event)) {
             return;
         }
-        if (!query.testState(player.getLocation(), Flags.GLIDE)) {
+        if (!event.isGliding() || !(event.getEntity() instanceof Player player)) {
+            return;
+        }
+        if (!query.testState(player, Flags.GLIDE)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPortal(final PlayerPortalEvent event) {
-        final Player player = event.getPlayer();
-        if (player.hasPermission(BYPASS)) {
+        if (EventGate.disabled(event)) {
             return;
         }
+        final Player player = event.getPlayer();
         if (!query.testState(event.getFrom(), Flags.NETHER_PORTALS)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onVehiclePortal(final EntityPortalEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         final Player player = ridingPlayer(event.getEntity());
-        if (player == null || player.hasPermission(BYPASS)) {
+        if (player == null) {
             return;
         }
         if (!query.testState(event.getFrom(), Flags.NETHER_PORTALS)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
         }
     }

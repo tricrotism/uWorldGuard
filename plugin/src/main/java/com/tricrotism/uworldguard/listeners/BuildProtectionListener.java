@@ -1,11 +1,12 @@
 package com.tricrotism.uworldguard.listeners;
 
+import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.region.ApplicableRegionSet;
 import com.tricrotism.uworldguard.region.RegionQuery;
 import com.tricrotism.uworldguard.text.MessageService;
-import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
@@ -19,8 +20,6 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.projectiles.ProjectileSource;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
-
-import java.util.UUID;
 
 /**
  * Enforces the build, block-break, block-place, interact, use, and pvp flags.
@@ -40,13 +39,17 @@ public final class BuildProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBreak(final BlockBreakEvent event) {
-        final Player player = event.getPlayer();
-        if (player.hasPermission(BYPASS)) {
+        if (EventGate.disabled(event)) {
             return;
         }
-        final ApplicableRegionSet set = query.getApplicableRegions(event.getBlock().getLocation());
-        final Material type = event.getBlock().getType();
+        final Player player = event.getPlayer();
+        final Block block = event.getBlock();
+        final ApplicableRegionSet set = query.getApplicableRegions(block);
+        final Material type = block.getType();
         if (set.flagSetContains(Flags.DENY_BLOCK_BREAK, type)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
             messages.send(player, "no-permission");
             return;
@@ -54,8 +57,10 @@ public final class BuildProtectionListener implements Listener {
         if (set.flagSetContains(Flags.ALLOW_BLOCK_BREAK, type)) {
             return;
         }
-        final UUID uuid = player.getUniqueId();
-        if (!set.canBuild(uuid) || !set.testState(Flags.BLOCK_BREAK)) {
+        if (!set.canBuild(player.getUniqueId()) || !set.testState(Flags.BLOCK_BREAK)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
             messages.send(player, "no-permission");
         }
@@ -63,13 +68,17 @@ public final class BuildProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlace(final BlockPlaceEvent event) {
-        final Player player = event.getPlayer();
-        if (player.hasPermission(BYPASS)) {
+        if (EventGate.disabled(event)) {
             return;
         }
-        final ApplicableRegionSet set = query.getApplicableRegions(event.getBlock().getLocation());
-        final Material type = event.getBlock().getType();
+        final Player player = event.getPlayer();
+        final Block block = event.getBlock();
+        final ApplicableRegionSet set = query.getApplicableRegions(block);
+        final Material type = block.getType();
         if (set.flagSetContains(Flags.DENY_BLOCK_PLACE, type)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
             messages.send(player, "no-permission");
             return;
@@ -77,8 +86,10 @@ public final class BuildProtectionListener implements Listener {
         if (set.flagSetContains(Flags.ALLOW_BLOCK_PLACE, type)) {
             return;
         }
-        final UUID uuid = player.getUniqueId();
-        if (!set.canBuild(uuid) || !set.testState(Flags.BLOCK_PLACE)) {
+        if (!set.canBuild(player.getUniqueId()) || !set.testState(Flags.BLOCK_PLACE)) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
             messages.send(player, "no-permission");
         }
@@ -86,15 +97,19 @@ public final class BuildProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onInteract(final PlayerInteractEvent event) {
-        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || event.getClickedBlock() == null) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
+        final Block block = event.getClickedBlock();
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || block == null) {
             return;
         }
         final Player player = event.getPlayer();
-        if (player.hasPermission(BYPASS)) {
-            return;
-        }
-        final ApplicableRegionSet set = query.getApplicableRegions(event.getClickedBlock().getLocation());
+        final ApplicableRegionSet set = query.getApplicableRegions(block);
         if (!set.canBuild(player.getUniqueId()) && (!set.testState(Flags.INTERACT) || !set.testState(Flags.USE))) {
+            if (player.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
             messages.send(player, "no-permission");
         }
@@ -102,15 +117,20 @@ public final class BuildProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPvp(final EntityDamageByEntityEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
         if (!(event.getEntity() instanceof Player)) {
             return;
         }
         final Player attacker = resolvePlayer(event.getDamager());
-        if (attacker == null || attacker.hasPermission(BYPASS)) {
+        if (attacker == null) {
             return;
         }
-        final Location loc = event.getEntity().getLocation();
-        if (!query.testState(loc, Flags.PVP)) {
+        if (!query.testState(event.getEntity(), Flags.PVP)) {
+            if (attacker.hasPermission(BYPASS)) {
+                return;
+            }
             event.setCancelled(true);
         }
     }
