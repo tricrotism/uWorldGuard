@@ -3,6 +3,7 @@ package com.tricrotism.uworldguard.listeners;
 import com.tricrotism.uworldguard.config.Bypass;
 import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
+import com.tricrotism.uworldguard.flags.State;
 import com.tricrotism.uworldguard.flags.StateFlag;
 import com.tricrotism.uworldguard.region.ApplicableRegionSet;
 import com.tricrotism.uworldguard.region.RegionQuery;
@@ -62,7 +63,12 @@ public final class WorkbenchListener implements Listener {
         final UUID uuid = player.getUniqueId();
         final ApplicableRegionSet set = query.getApplicableRegions(block);
         final StateFlag denied;
-        if (ANVILS.contains(block.getType()) && !set.testState(Flags.USE_ANVIL, uuid)) {
+        final State anvil = ANVILS.contains(block.getType())
+            ? set.queryExplicitState(Flags.USE_ANVIL, uuid) : null;
+        if (anvil == State.ALLOW) {
+            return;
+        }
+        if (anvil == State.DENY) {
             denied = Flags.USE_ANVIL;
         } else if (!set.testState(Flags.PERMIT_WORKBENCHES, uuid)) {
             denied = Flags.PERMIT_WORKBENCHES;

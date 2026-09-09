@@ -69,18 +69,23 @@ public final class MessageService {
         load();
     }
 
+    /**
+     * Reads the file into the live map by overwriting and then pruning, never by clearing first.
+     * Every region thread reads {@code templates} while {@code /uwg reload} writes it, and a clear
+     * left a window in which every message on the server was missing — denials, greetings and all —
+     * for the width of a YAML parse.
+     */
     private void load() {
         final FileConfiguration cfg = YamlConfiguration.loadConfiguration(file);
         this.cooldownMillis = Math.max(0L, cfg.getLong("cooldown-seconds", 3L)) * 1000L;
-        templates.clear();
         final ConfigurationSection section = cfg.getConfigurationSection("messages");
         boolean overrides = false;
-        if (section != null) {
-            for (final String key : section.getKeys(false)) {
-                templates.put(key, section.getString(key, ""));
-                overrides |= key.startsWith(DENY_PREFIX);
-            }
+        final Set<String> present = section == null ? Set.of() : section.getKeys(false);
+        for (final String key : present) {
+            templates.put(key, section.getString(key, ""));
+            overrides |= key.startsWith(DENY_PREFIX);
         }
+        templates.keySet().retainAll(present);
         this.denyOverrides = overrides;
     }
 

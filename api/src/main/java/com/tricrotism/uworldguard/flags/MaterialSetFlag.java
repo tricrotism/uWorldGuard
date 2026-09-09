@@ -45,12 +45,17 @@ public final class MaterialSetFlag extends Flag<Set<Material>> {
             return parse(String.valueOf(stored));
         }
         final Set<Material> materials = EnumSet.noneOf(Material.class);
+        final List<String> unreadable = new ArrayList<>(0);
         for (final Object element : list) {
-            final Material material = Material.matchMaterial(String.valueOf(element));
+            final String token = String.valueOf(element);
+            final Material material = Material.matchMaterial(token);
             if (material != null) {
                 materials.add(material);
+            } else {
+                unreadable.add(token);
             }
         }
+        DroppedValues.report(getName(), unreadable);
         return materials.isEmpty() ? null : materials;
     }
 

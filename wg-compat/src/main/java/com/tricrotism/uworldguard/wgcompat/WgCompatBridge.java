@@ -35,6 +35,7 @@ public final class WgCompatBridge {
      */
     public static void bind(final RegionContainer container, final JavaPlugin plugin) {
         binding = new Binding(container, plugin);
+        SessionBridge.rearm();
     }
 
     /**

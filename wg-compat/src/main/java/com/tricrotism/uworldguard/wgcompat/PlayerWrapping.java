@@ -7,16 +7,12 @@ package com.tricrotism.uworldguard.wgcompat;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
-import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.List;
@@ -26,13 +22,12 @@ import java.util.concurrent.TimeUnit;
 /**
  * Builds {@code com.sk89q.worldguard.LocalPlayer} instances.
  *
- * <p>WorldEdit's {@code Player}/{@code Actor}/{@code Entity} surface is large and drifts between
- * WorldEdit releases, so it is never hand-implemented: a {@link Proxy} forwards every WorldEdit
- * method to the real {@code Player} that {@code BukkitAdapter.adapt} produces, and answers
- * WorldGuard's own methods against the Bukkit {@link Player}. Only the shape WorldGuard adds is
- * maintained here, and it moves with whatever WorldEdit is installed.
+ * <p>An online player becomes a {@link LocalBukkitPlayer}, which extends WorldEdit's own
+ * {@code BukkitPlayer}. Consumers cast to that class to get back to Bukkit, so the inheritance is
+ * part of the contract. An offline player has no WorldEdit player to extend, so it stays a
+ * {@link Proxy} that answers identity and permission questions and refuses the rest.
  *
- * <p>Each proxy also implements {@link UuidSubject}, which is what keeps region queries made with a
+ * <p>Both also implement {@link UuidSubject}, which is what keeps region queries made with a
  * {@code LocalPlayer} on the engine's UUID fast path.
  *
  * <p>This class is the only place the shim resolves a WorldEdit type from a static initialiser, and
@@ -42,8 +37,6 @@ import java.util.concurrent.TimeUnit;
 public final class PlayerWrapping {
 
     private static final Class<?> LOCAL_PLAYER = com.sk89q.worldguard.LocalPlayer.class;
-    private static final Class<?> REGION_ASSOCIABLE =
-        com.sk89q.worldguard.protection.association.RegionAssociable.class;
 
     private static final Class<?>[] INTERFACES = {LOCAL_PLAYER, UuidSubject.class};
 
@@ -52,7 +45,7 @@ public final class PlayerWrapping {
      * values would be collected between calls and defeat the cache. Staleness is handled by the
      * identity check in {@link #wrap(Player)}, not by the expiry.
      */
-    private static final Cache<UUID, Wrapper> CACHE = Caffeine.newBuilder()
+    private static final Cache<UUID, LocalBukkitPlayer> CACHE = Caffeine.newBuilder()
         .expireAfterAccess(10, TimeUnit.MINUTES)
         .build();
 
@@ -66,14 +59,14 @@ public final class PlayerWrapping {
      */
     public static Object wrap(final Player player) {
         final UUID uniqueId = player.getUniqueId();
-        final Wrapper cached = CACHE.getIfPresent(uniqueId);
-        if (cached != null && cached.bukkit == player) {
-            return cached.proxy;
+        final LocalBukkitPlayer cached = CACHE.getIfPresent(uniqueId);
+        if (cached != null && cached.bukkit() == player) {
+            return cached;
         }
         CompatDiagnostics.WRAPS.increment();
-        final Wrapper wrapper = create(player, player, uniqueId);
-        CACHE.put(uniqueId, wrapper);
-        return wrapper.proxy;
+        final LocalBukkitPlayer wrapped = new LocalBukkitPlayer(player);
+        CACHE.put(uniqueId, wrapped);
+        return wrapped;
     }
 
     /**
@@ -87,7 +80,16 @@ public final class PlayerWrapping {
             return wrap(online);
         }
         CompatDiagnostics.WRAPS.increment();
-        return create(null, player, player.getUniqueId()).proxy;
+        return createOffline(player);
+    }
+
+    /**
+     * Drops the wrapper held for a player who has left. The expiry alone would release it eventually,
+     * but until then the wrapper holds their {@code Player}, and through it the server's whole
+     * entity and inventory graph for someone no longer on the server.
+     */
+    public static void forget(final UUID uniqueId) {
+        CACHE.invalidate(uniqueId);
     }
 
     /**
@@ -118,155 +120,56 @@ public final class PlayerWrapping {
         return null;
     }
 
-    private static Wrapper create(final Player online, final OfflinePlayer offline, final UUID uniqueId) {
-        final com.sk89q.worldedit.entity.Player actor =
-            online == null ? null : com.sk89q.worldedit.bukkit.BukkitAdapter.adapt(online);
-        final Handler handler = new Handler(online, offline, actor, uniqueId);
-        final Object proxy = Proxy.newProxyInstance(LOCAL_PLAYER.getClassLoader(), INTERFACES, handler);
-        return new Wrapper(online, proxy);
+    private static Object createOffline(final OfflinePlayer offline) {
+        final Handler handler = new Handler(offline, offline.getUniqueId());
+        return Proxy.newProxyInstance(LOCAL_PLAYER.getClassLoader(), INTERFACES, handler);
     }
 
-    private record Wrapper(Player bukkit, Object proxy) {
-    }
-
+    /**
+     * Offline only: there is no WorldEdit player behind it, so identity and association are answered
+     * here and every other member is refused rather than guessed at.
+     */
     private static final class Handler implements InvocationHandler {
 
-        private final Player bukkit;
         private final OfflinePlayer offline;
-        private final com.sk89q.worldedit.entity.Player actor;
         private final UUID uniqueId;
 
-        private Handler(final Player bukkit, final OfflinePlayer offline,
-                        final com.sk89q.worldedit.entity.Player actor, final UUID uniqueId) {
-            this.bukkit = bukkit;
+        private Handler(final OfflinePlayer offline, final UUID uniqueId) {
             this.offline = offline;
-            this.actor = actor;
             this.uniqueId = uniqueId;
         }
 
         @Override
-        public Object invoke(final Object proxy, final Method method, final Object[] args) throws Throwable {
+        public Object invoke(final Object proxy, final Method method, final Object[] args) {
             final Class<?> declaring = method.getDeclaringClass();
             if (declaring == Object.class) {
-                return object(proxy, method, args);
+                return object(method, args);
             }
             if (declaring == UuidSubject.class) {
                 return uniqueId;
             }
-            if (declaring == LOCAL_PLAYER || declaring == REGION_ASSOCIABLE) {
-                return worldGuard(method, args);
-            }
-            if (actor == null) {
-                return offlineFallback(method);
-            }
-            try {
-                return method.invoke(actor, args);
-            } catch (final InvocationTargetException e) {
-                throw e.getCause();
-            }
+            return switch (method.getName()) {
+                case "getAssociation" -> association(args[0]);
+                case "hasGroup" -> Groups.inGroup(uniqueId, (String) args[0]);
+                case "hasPermission" -> Boolean.FALSE;
+                case "print", "printRaw", "printDebug", "printError", "printInfo" -> null;
+                case "getUniqueId" -> uniqueId;
+                case "getName", "getDisplayName" -> offline.getName();
+                case "isPlayer" -> Boolean.FALSE;
+                default -> {
+                    CompatDiagnostics.stub("LocalPlayer." + method.getName() + " (offline)");
+                    throw new UnsupportedOperationException(
+                        "LocalPlayer." + method.getName() + " is not available for an offline player");
+                }
+            };
         }
 
-        private Object object(final Object proxy, final Method method, final Object[] args) {
+        private Object object(final Method method, final Object[] args) {
             return switch (method.getName()) {
                 case "equals" -> args[0] instanceof UuidSubject other && uniqueId.equals(other.uwgUuid());
                 case "hashCode" -> uniqueId.hashCode();
                 default -> "LocalPlayer{" + uniqueId + '}';
             };
-        }
-
-        private Object worldGuard(final Method method, final Object[] args) {
-            switch (method.getName()) {
-                case "getAssociation":
-                    return association(args[0]);
-                case "hasGroup":
-                    return bukkit != null && Groups.inGroup(bukkit.getUniqueId(), (String) args[0]);
-                default:
-                    break;
-            }
-            if (bukkit == null) {
-                CompatDiagnostics.stub("LocalPlayer." + method.getName() + " (offline)");
-                throw new UnsupportedOperationException(
-                    "LocalPlayer." + method.getName() + " is not available for an offline player");
-            }
-            return online(method, args);
-        }
-
-        private Object online(final Method method, final Object[] args) {
-            switch (method.getName()) {
-                case "getHealth":
-                    return bukkit.getHealth();
-                case "setHealth":
-                    bukkit.setHealth((Double) args[0]);
-                    return null;
-                case "getMaxHealth": {
-                    final AttributeInstance attribute =
-                        bukkit.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
-                    return attribute == null ? 20.0D : attribute.getValue();
-                }
-                case "getFoodLevel":
-                    return (double) bukkit.getFoodLevel();
-                case "setFoodLevel":
-                    bukkit.setFoodLevel((int) (double) (Double) args[0]);
-                    return null;
-                case "getSaturation":
-                    return (double) bukkit.getSaturation();
-                case "setSaturation":
-                    bukkit.setSaturation((float) (double) (Double) args[0]);
-                    return null;
-                case "getExhaustion":
-                    return bukkit.getExhaustion();
-                case "setExhaustion":
-                    bukkit.setExhaustion((Float) args[0]);
-                    return null;
-                case "getFireTicks":
-                    return bukkit.getFireTicks();
-                case "setFireTicks":
-                    bukkit.setFireTicks((Integer) args[0]);
-                    return null;
-                case "resetFallDistance":
-                    bukkit.setFallDistance(0.0F);
-                    return null;
-                case "setCompassTarget":
-                    bukkit.setCompassTarget(toBukkit(args[0]));
-                    return null;
-                case "getPlayerTimeOffset":
-                    return bukkit.getPlayerTimeOffset();
-                case "isPlayerTimeRelative":
-                    return bukkit.isPlayerTimeRelative();
-                case "setPlayerTime":
-                    bukkit.setPlayerTime((Long) args[0], (Boolean) args[1]);
-                    return null;
-                case "resetPlayerTime":
-                    bukkit.resetPlayerTime();
-                    return null;
-                case "getPlayerWeather":
-                    return weather();
-                case "setPlayerWeather":
-                    bukkit.setPlayerWeather(isClear(args[0])
-                        ? org.bukkit.WeatherType.CLEAR
-                        : org.bukkit.WeatherType.DOWNFALL);
-                    return null;
-                case "resetPlayerWeather":
-                    bukkit.resetPlayerWeather();
-                    return null;
-                case "kick":
-                    bukkit.kick(Component.text(String.valueOf(args[0])));
-                    return null;
-                case "ban":
-                    ban((String) args[0]);
-                    return null;
-                case "sendTitle":
-                    bukkit.showTitle(Title.title(
-                        Component.text(args[0] == null ? "" : (String) args[0]),
-                        Component.text(args[1] == null ? "" : (String) args[1])));
-                    return null;
-                case "teleport":
-                    teleport(args);
-                    return null;
-                default:
-                    CompatDiagnostics.stub("LocalPlayer." + method.getName());
-                    throw new UnsupportedOperationException("LocalPlayer." + method.getName());
-            }
         }
 
         @SuppressWarnings("unchecked")
@@ -286,57 +189,6 @@ public final class PlayerWrapping {
             return member
                 ? com.sk89q.worldguard.domains.Association.MEMBER
                 : com.sk89q.worldguard.domains.Association.NON_MEMBER;
-        }
-
-        private Object offlineFallback(final Method method) {
-            return switch (method.getName()) {
-                case "getUniqueId" -> uniqueId;
-                case "getName", "getDisplayName" -> offline.getName();
-                case "isPlayer" -> Boolean.FALSE;
-                default -> {
-                    CompatDiagnostics.stub("LocalPlayer." + method.getName() + " (offline)");
-                    throw new UnsupportedOperationException(
-                        "LocalPlayer." + method.getName() + " is not available for an offline player");
-                }
-            };
-        }
-
-        private Object weather() {
-            final org.bukkit.WeatherType player = bukkit.getPlayerWeather();
-            final boolean clear = player != null
-                ? player == org.bukkit.WeatherType.CLEAR
-                : !bukkit.getWorld().hasStorm();
-            return clear
-                ? com.sk89q.worldedit.world.weather.WeatherTypes.CLEAR
-                : com.sk89q.worldedit.world.weather.WeatherTypes.RAIN;
-        }
-
-        private void ban(final String message) {
-            bukkit.ban(message, (java.util.Date) null, null);
-        }
-
-        private void teleport(final Object[] args) {
-            final org.bukkit.Location target = toBukkit(args[0]);
-            final String success = (String) args[1];
-            final String failure = (String) args[2];
-            bukkit.teleportAsync(target).thenAccept(moved -> {
-                final String message = moved ? success : failure;
-                if (message != null && !message.isEmpty()) {
-                    bukkit.sendMessage(Component.text(message));
-                }
-            });
-        }
-
-        private org.bukkit.Location toBukkit(final Object weLocation) {
-            final com.sk89q.worldedit.util.Location location = (com.sk89q.worldedit.util.Location) weLocation;
-            return new org.bukkit.Location(bukkit.getWorld(), location.getX(), location.getY(),
-                location.getZ(), location.getYaw(), location.getPitch());
-        }
-
-        private static boolean isClear(final Object weWeather) {
-            return weWeather == null
-                || ((com.sk89q.worldedit.world.weather.WeatherType) weWeather)
-                .id().equals(com.sk89q.worldedit.world.weather.WeatherTypes.CLEAR.id());
         }
     }
 }

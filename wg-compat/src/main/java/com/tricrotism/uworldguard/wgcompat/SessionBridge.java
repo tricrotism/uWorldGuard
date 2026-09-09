@@ -105,7 +105,7 @@ public final class SessionBridge implements com.sk89q.worldguard.session.Session
         discardSessions();
         SessionDispatch.install(this);
         SessionDispatch.ACTIVE = WgCompatBridge.active();
-        if (ANNOUNCED.compareAndSet(false, true)) {
+        if (com.tricrotism.uworldguard.util.VerboseLogging.enabled() && ANNOUNCED.compareAndSet(false, true)) {
             LOGGER.log(Level.INFO, "A plugin registered a WorldGuard session handler ({0});"
                     + " uWorldGuard is now dispatching movement to session handlers.",
                 factory.getClass().getName());
@@ -157,9 +157,16 @@ public final class SessionBridge implements com.sk89q.worldguard.session.Session
             final java.util.Map.Entry<UUID, com.sk89q.worldguard.session.Session> entry = entries.next();
             entries.remove();
             final org.bukkit.entity.Player bukkit = org.bukkit.Bukkit.getPlayer(entry.getKey());
-            if (bukkit != null) {
-                entry.getValue().uninitialize(
-                    (com.sk89q.worldguard.LocalPlayer) PlayerWrapping.wrap(bukkit));
+            if (bukkit == null) {
+                continue;
+            }
+            final com.sk89q.worldguard.session.Session session = entry.getValue();
+            if (org.bukkit.Bukkit.getServer().isOwnedByCurrentRegion(bukkit)) {
+                session.uninitialize((com.sk89q.worldguard.LocalPlayer) PlayerWrapping.wrap(bukkit));
+            } else if (WgCompatBridge.active()) {
+                bukkit.getScheduler().run(WgCompatBridge.plugin(),
+                    _ -> session.uninitialize(
+                        (com.sk89q.worldguard.LocalPlayer) PlayerWrapping.wrap(bukkit)), null);
             }
         }
     }
@@ -188,6 +195,20 @@ public final class SessionBridge implements com.sk89q.worldguard.session.Session
                     (com.sk89q.worldguard.LocalPlayer) PlayerWrapping.wrap(bukkit));
             }
         }
+        factories.clear();
+    }
+
+    /**
+     * Re-arms dispatch for handler factories that outlived a disable, called when uWorldGuard binds
+     * the compat layer again.
+     *
+     * <p>{@code ACTIVE} is cleared on the way out, and only {@code registerHandler} ever set it. A
+     * consumer that registered before an in-place disable and enable therefore had a manager that
+     * still listed its factories and still answered {@code customHandlersRegistered()}, while every
+     * movement gate read false and its handlers were never dispatched again.
+     */
+    static void rearm() {
+        SessionDispatch.ACTIVE = !INSTANCE.factories.isEmpty() && WgCompatBridge.active();
     }
 
     @Override

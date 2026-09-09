@@ -374,7 +374,8 @@ public final class MovementListener implements Listener {
             messages.sendFlag(player, fromSet.queryValue(Flags.EXIT_DENY_MESSAGE), "exit-denied");
             return true;
         }
-        if (!bypass && entering && !isMember(toSet, uuid) && levelDenied(player, toSet)) {
+        if (!bypass && entering && levelsInUse(toSet) && !isMember(toSet, uuid)
+            && levelDenied(player, toSet)) {
             messages.send(player, "entry-denied");
             return true;
         }
@@ -460,6 +461,7 @@ public final class MovementListener implements Listener {
         }
         final List<Entity> passengers = vehicle.getPassengers();
         if (passengers.isEmpty()) {
+            riddenMounts.remove(vehicle.getUniqueId());
             return false;
         }
 
@@ -472,7 +474,9 @@ public final class MovementListener implements Listener {
         }
 
         final boolean limited = entering && toSet.worldUses(Flags.PLAYER_COUNT_LIMIT);
+        final boolean levelled = entering && levelsInUse(toSet);
         final boolean sessions = SessionDispatch.ACTIVE;
+        final boolean exitGuarded = leaving && !Boolean.TRUE.equals(fromSet.queryValue(Flags.EXIT_OVERRIDE));
         final World world = to.getWorld();
 
         List<Player> denied = null;
@@ -483,8 +487,10 @@ public final class MovementListener implements Listener {
             final UUID uuid = player.getUniqueId();
             if (entering && !toSet.testState(Flags.ENTRY, uuid) && !isMember(toSet, uuid)) {
                 messages.sendFlag(player, toSet.queryValue(Flags.ENTRY_DENY_MESSAGE), "entry-denied");
-            } else if (leaving && !fromSet.testState(Flags.EXIT, uuid) && !isMember(fromSet, uuid)) {
+            } else if (exitGuarded && !fromSet.testState(Flags.EXIT, uuid) && !isMember(fromSet, uuid)) {
                 messages.sendFlag(player, fromSet.queryValue(Flags.EXIT_DENY_MESSAGE), "exit-denied");
+            } else if (levelled && !isMember(toSet, uuid) && levelDenied(player, toSet)) {
+                messages.send(player, "entry-denied");
             } else if ((!limited || !countDenied(world, player, uuid, fromSet, toSet))
                 && (!sessions
                 || SessionDispatch.testMove(player, from, to, SessionDispatch.Move.RIDE) == null)) {
@@ -670,15 +676,58 @@ public final class MovementListener implements Listener {
         }
     }
 
+    /**
+     * Plays a {@code play-sounds} value: a sound key, optionally followed by {@code :volume} and then
+     * {@code :pitch}. Read from the right, because the key is itself namespaced — splitting on the
+     * first colon read {@code minecraft:block.anvil.land} as the sound "minecraft" and silently
+     * played nothing.
+     */
     private void playSound(final Player player, final @Nullable String raw) {
         if (raw == null || raw.isBlank()) {
             return;
         }
-        final String[] parts = raw.split(":");
-        final String sound = parts[0].trim();
-        final float volume = parts.length >= 2 ? parseFloat(parts[1], 1f) : 1f;
-        final float pitch = parts.length >= 3 ? parseFloat(parts[2], 1f) : 1f;
-        player.playSound(player, sound, volume, pitch);
+        int end = raw.length();
+        float volume = 1f;
+        float pitch = 1f;
+        final int last = numberStart(raw, end);
+        if (last >= 0) {
+            final int previous = numberStart(raw, last);
+            if (previous >= 0) {
+                volume = Float.parseFloat(raw.substring(previous + 1, last));
+                pitch = Float.parseFloat(raw.substring(last + 1, end));
+                end = previous;
+            } else {
+                volume = Float.parseFloat(raw.substring(last + 1, end));
+                end = last;
+            }
+        }
+        player.playSound(player, raw.substring(0, end).trim(), volume, pitch);
+    }
+
+    /**
+     * Index of the {@code ':'} introducing the numeric segment that ends at {@code end}, or -1 when
+     * that segment is not a plain number — which is what the path half of a namespaced key looks
+     * like. Scans rather than splits, so a value with no volume or pitch allocates nothing beyond the
+     * key itself.
+     */
+    private static int numberStart(final String raw, final int end) {
+        final int colon = raw.lastIndexOf(':', end - 1);
+        if (colon <= 0 || colon + 1 == end) {
+            return -1;
+        }
+        boolean digit = false;
+        boolean dot = false;
+        for (int i = colon + 1; i < end; i++) {
+            final char c = raw.charAt(i);
+            if (c >= '0' && c <= '9') {
+                digit = true;
+            } else if (c == '.' && !dot) {
+                dot = true;
+            } else {
+                return -1;
+            }
+        }
+        return digit ? colon : -1;
     }
 
     /**
@@ -743,6 +792,14 @@ public final class MovementListener implements Listener {
     }
 
     /**
+     * Whether the world this set came from sets an entry level threshold anywhere. Two bitset tests,
+     * so a crossing on the overwhelming majority of servers never resolves either flag.
+     */
+    private static boolean levelsInUse(final ApplicableRegionSet toSet) {
+        return toSet.worldUses(Flags.ENTRY_MIN_LEVEL) || toSet.worldUses(Flags.ENTRY_MAX_LEVEL);
+    }
+
+    /**
      * How many players stand inside {@code region} right now, excluding the one moving: on the polled
      * path they have already physically entered, so counting them would read one over the truth.
      *
@@ -777,14 +834,6 @@ public final class MovementListener implements Listener {
             return Integer.parseInt(messages.expand(player, raw).trim());
         } catch (final NumberFormatException e) {
             return null;
-        }
-    }
-
-    private static float parseFloat(final String value, final float fallback) {
-        try {
-            return Float.parseFloat(value.trim());
-        } catch (final NumberFormatException e) {
-            return fallback;
         }
     }
 
@@ -1010,6 +1059,7 @@ public final class MovementListener implements Listener {
         if (SessionDispatch.TRACKING) {
             SessionDispatch.uninitialize(player);
         }
+        SessionDispatch.forget(player);
         messages.clear(uuid);
         collision.set(player, false);
         pearls.clear(uuid);

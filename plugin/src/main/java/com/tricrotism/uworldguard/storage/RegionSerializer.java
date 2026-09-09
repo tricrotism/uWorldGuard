@@ -13,6 +13,7 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
 import java.util.*;
+import java.util.logging.Logger;
 
 /**
  * Converts a {@link RegionManager} to and from a YAML text document. Shared by every
@@ -30,6 +31,14 @@ public final class RegionSerializer {
      * character here can appear in a YAML key.
      */
     private static final char SEPARATOR = (char) 0;
+
+    /**
+     * A parent link that cannot be honored is dropped rather than failing the world's load, so the
+     * regions that are fine still protect. Dropping it silently is what makes that dangerous: the
+     * child then inherits none of the parent's flags, which reads in game as protection that stopped
+     * working, with nothing anywhere saying why.
+     */
+    private static final Logger LOG = Logger.getLogger("uWorldGuard");
 
     public String toYaml(final RegionManager manager) {
         final YamlConfiguration yaml = new YamlConfiguration();
@@ -51,6 +60,7 @@ public final class RegionSerializer {
         }
 
         final Map<String, String> parents = new HashMap<>();
+        final Map<String, Integer> droppedFlags = new TreeMap<>();
         for (final String id : root.getKeys(false)) {
             final ConfigurationSection sec = root.getConfigurationSection(id);
             if (sec == null) {
@@ -63,13 +73,10 @@ public final class RegionSerializer {
             } catch (final RuntimeException e) {
                 throw new InvalidConfigurationException("Malformed region '" + id + "'", e);
             }
-            if (region == null) {
-                continue;
-            }
             region.setPriority(sec.getInt("priority", 0));
-            readDomain(sec.getConfigurationSection("owners"), region.getOwners());
-            readDomain(sec.getConfigurationSection("members"), region.getMembers());
-            readFlags(sec.getConfigurationSection("flags"), region);
+            readDomain(sec.getConfigurationSection("owners"), region.getOwners(), id, "owners");
+            readDomain(sec.getConfigurationSection("members"), region.getMembers(), id, "members");
+            readFlags(sec.getConfigurationSection("flags"), region, droppedFlags);
             final String parent = sec.getString("parent");
             if (parent != null) {
                 parents.put(id.toLowerCase(Locale.ROOT), parent);
@@ -79,18 +86,41 @@ public final class RegionSerializer {
 
         for (final Map.Entry<String, String> entry : parents.entrySet()) {
             final ProtectedRegion child = manager.getRegion(entry.getKey());
-            final ProtectedRegion parent = manager.getRegion(entry.getValue());
-            if (child != null && parent != null) {
-                try {
-                    child.setParent(parent);
-                } catch (final IllegalArgumentException _) {
-                }
+            if (child == null) {
+                continue;
             }
+            final ProtectedRegion parent = manager.getRegion(entry.getValue());
+            if (parent == null) {
+                LOG.warning("Region '" + entry.getKey() + "' names a parent that does not exist: '"
+                    + entry.getValue() + "'. It inherits nothing until the parent is created or the"
+                    + " name is corrected.");
+                continue;
+            }
+            try {
+                child.setParent(parent);
+            } catch (final IllegalArgumentException e) {
+                LOG.warning("Region '" + entry.getKey() + "' cannot have '" + entry.getValue()
+                    + "' as its parent: " + e.getMessage() + ". It inherits nothing until the loop is"
+                    + " broken.");
+            }
+        }
+        if (!droppedFlags.isEmpty()) {
+            LOG.warning("Dropped " + droppedFlags.values().stream().mapToInt(Integer::intValue).sum()
+                + " stored flag value(s) this build cannot read: " + droppedFlags
+                + ". The next save writes those regions without them. A flag another plugin"
+                + " registers is only known once that plugin has loaded, so this can mean a missing"
+                + " or late plugin rather than bad data. Check before saving over it.");
         }
         manager.clearDirty();
     }
 
-    private @Nullable ProtectedRegion readRegion(final String id, final ConfigurationSection sec) {
+    /**
+     * A shape this build does not know is treated as a malformed region rather than skipped. Skipping
+     * it read as an empty line: the region simply was not there, and because the file is rewritten
+     * from what loaded, the next autosave erased it. Failing the world's load instead leaves the
+     * stored file alone, which is what the caller's {@code failedLoads} guard is for.
+     */
+    private ProtectedRegion readRegion(final String id, final ConfigurationSection sec) {
         final String type = sec.getString("type", "cuboid");
         return switch (type.toLowerCase(Locale.ROOT)) {
             case "cuboid" -> new ProtectedCuboidRegion(id, readVec(sec, "min"), readVec(sec, "max"));
@@ -103,7 +133,7 @@ public final class RegionSerializer {
                 sec.getInt("center-x"), sec.getInt("center-y"), sec.getInt("center-z"),
                 sec.getInt("radius-x"), sec.getInt("radius-y"), sec.getInt("radius-z"));
             case "global" -> new GlobalProtectedRegion();
-            default -> null;
+            default -> throw new IllegalArgumentException("unknown region type '" + type + "'");
         };
     }
 
@@ -168,7 +198,13 @@ public final class RegionSerializer {
         return ((Flag<Object>) flag).marshal(value);
     }
 
-    private void readFlags(final @Nullable ConfigurationSection sec, final ProtectedRegion region) {
+    /**
+     * @param dropped collects what could not be kept, counted by flag name, for the caller to report
+     */
+    private void readFlags(
+        final @Nullable ConfigurationSection sec, final ProtectedRegion region,
+        final Map<String, Integer> dropped
+    ) {
         if (sec == null) {
             return;
         }
@@ -176,29 +212,55 @@ public final class RegionSerializer {
             if (key.endsWith("-group")) {
                 final Flag<?> flag = Flags.get(key.substring(0, key.length() - "-group".length()));
                 final Object raw = sec.get(key);
-                if (flag != null && raw != null) {
-                    region.setFlagGroup(flag, RegionGroup.parse(String.valueOf(raw)));
+                if (flag == null || raw == null) {
+                    continue;
                 }
+                final RegionGroup group = RegionGroup.parse(String.valueOf(raw));
+                if (group == null) {
+                    dropped.merge(key + " (unreadable group)", 1, Integer::sum);
+                    continue;
+                }
+                region.setFlagGroup(flag, group);
                 continue;
             }
             final Flag<?> flag = Flags.get(key);
-            if (flag != null) {
-                applyFlag(region, flag, sec.get(key));
+            if (flag == null) {
+                dropped.merge(key + " (no such flag)", 1, Integer::sum);
+                continue;
+            }
+            if (!applyFlag(region, flag, sec.get(key))) {
+                dropped.merge(key + " (unreadable value)", 1, Integer::sum);
             }
         }
     }
 
-    private static <T> void applyFlag(final ProtectedRegion region, final Flag<T> flag, final @Nullable Object stored) {
+    /**
+     * @return whether the stored value was kept; {@code false} means the flag is now unset on this
+     * region and the next save writes it out that way
+     */
+    private static <T> boolean applyFlag(
+        final ProtectedRegion region, final Flag<T> flag, final @Nullable Object stored
+    ) {
         if (stored == null) {
-            return;
+            return true;
         }
         final T value = flag.unmarshal(stored);
-        if (value != null) {
-            region.setFlag(flag, value);
+        if (value == null) {
+            return false;
         }
+        region.setFlag(flag, value);
+        return true;
     }
 
-    private void readDomain(final @Nullable ConfigurationSection sec, final DefaultDomain domain) {
+    /**
+     * Entries that are not UUIDs are dropped, and saying so is the point: the region is written back
+     * from the domain this builds, so the next autosave persists the loss. Silently, an owner stops
+     * owning their region and the only record that they ever did is gone one save cycle later.
+     */
+    private void readDomain(
+        final @Nullable ConfigurationSection sec, final DefaultDomain domain,
+        final String regionId, final String role
+    ) {
         if (sec == null) {
             return;
         }
@@ -206,6 +268,10 @@ public final class RegionSerializer {
             try {
                 domain.addPlayer(UUID.fromString(raw));
             } catch (final IllegalArgumentException _) {
+                LOG.warning("Region '" + regionId + "' has an entry in its " + role
+                    + " that is not a UUID: '" + raw + "'. It has been dropped, and the next save"
+                    + " will write the region without it. Restore it from a backup if that player"
+                    + " should still be listed.");
             }
         }
         for (final String group : sec.getStringList("groups")) {

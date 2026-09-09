@@ -7,10 +7,8 @@ package com.sk89q.worldguard.bukkit;
 
 import com.sk89q.worldguard.LocalPlayer;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.logging.Level;
 
@@ -127,6 +125,35 @@ public class WorldGuardPlugin extends org.bukkit.plugin.java.JavaPlugin {
         } catch (final IOException e) {
             getLogger().log(Level.WARNING, "Could not write default configuration " + defaultName, e);
         }
+    }
+
+    /**
+     * Answers a {@code plugin.yml} probe with a WorldGuard descriptor carrying the version this
+     * plugin publishes, and every other name out of the jar unchanged.
+     *
+     * <p>uWorldGuard is a {@code paper-plugin.yml} plugin, so its jar holds no {@code plugin.yml}.
+     * A consumer that version-checks WorldGuard by reading that entry instead of the plugin metadata
+     * therefore gets a null stream. MythicMobs is one: {@code WorldGuardSupport} opens a
+     * {@link java.util.Scanner} straight over the result, so the probe reaches uWorldGuard as a
+     * {@link NullPointerException} out of the scanner and MythicMobs reports only that WorldGuard
+     * support failed to enable. The descriptor below keeps that one field in step with
+     * {@code compatibility.report-version}, which is the setting that governs every other version a
+     * consumer can read.
+     *
+     * <p>Paper never parses this: {@code PluginFileType} takes {@code paper-plugin.yml} when both
+     * are present, and here the entry does not exist in the jar at all.
+     */
+    @Override
+    public InputStream getResource(final String filename) {
+        final InputStream fromJar = super.getResource(filename);
+        if (fromJar != null || !"plugin.yml".equals(filename)) {
+            return fromJar;
+        }
+        final String descriptor = "name: WorldGuard\n"
+            + "version: '" + getPluginMeta().getVersion() + "'\n"
+            + "main: com.sk89q.worldguard.bukkit.WorldGuardPlugin\n"
+            + "api-version: '1.13'\n";
+        return new ByteArrayInputStream(descriptor.getBytes(StandardCharsets.UTF_8));
     }
 
     /**

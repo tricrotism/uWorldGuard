@@ -1,6 +1,8 @@
 package com.tricrotism.uworldguard.listeners;
 
 import com.destroystokyo.paper.event.entity.EntityZapEvent;
+import com.sk89q.worldguard.bukkit.protection.events.DisallowedPVPEvent;
+import com.sk89q.worldguard.bukkit.util.Events;
 import com.tricrotism.uworldguard.config.Bypass;
 import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
@@ -20,6 +22,7 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Enforces mob-spawning and deny-spawn, the explosion flags, mob grief (enderman, ravager, wither,
@@ -165,9 +168,22 @@ public final class EntityListener implements Listener {
             return;
         }
 
-        if (victim instanceof Animals && !query.testState(victim, Flags.DAMAGE_ANIMALS)) {
+        if (victim instanceof Animals) {
             final Player attacker = resolveAttacker(damager);
-            if (attacker != null && !Bypass.has(attacker)) {
+            if (attacker != null
+                && !query.getApplicableRegions(victim)
+                .testState(Flags.DAMAGE_ANIMALS, attacker.getUniqueId())
+                && !Bypass.has(attacker)) {
+                event.setCancelled(true);
+            }
+            return;
+        }
+
+        if (victim instanceof ItemFrame) {
+            final Player attacker = resolveAttacker(damager);
+            final UUID subject = attacker == null ? null : attacker.getUniqueId();
+            if (!query.getApplicableRegions(victim).testState(Flags.ENTITY_ITEM_FRAME_DESTROY, subject)
+                && (attacker == null || !Bypass.has(attacker))) {
                 event.setCancelled(true);
             }
         }
@@ -268,6 +284,10 @@ public final class EntityListener implements Listener {
      * {@code EntityDamageEvent} with no attacker attached, so {@code pvp} and {@code mob-damage} —
      * which both key on the damager — never see it. Fire aspect and flame bows were therefore a way
      * to keep hurting players in a {@code pvp: deny} region; this stops the ignition instead.
+     *
+     * <p>Because this is the {@code pvp} flag by another route, a plugin that overrides the flag
+     * through {@link DisallowedPVPEvent} overrides the ignition too. WorldGuard fires that event
+     * from the damage path alone, having no combustion handler to fire it from.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onCombustByEntity(final EntityCombustByEntityEvent event) {
@@ -276,7 +296,7 @@ public final class EntityListener implements Listener {
         }
         final Entity victim = event.getEntity();
         final Entity source = event.getCombuster();
-        if (!(victim instanceof Player)) {
+        if (!(victim instanceof Player defender)) {
             return;
         }
         if (source instanceof Mob) {
@@ -290,7 +310,8 @@ public final class EntityListener implements Listener {
             return;
         }
         if (!query.getApplicableRegions(victim).testState(Flags.PVP, attacker.getUniqueId())
-            && !Bypass.has(attacker)) {
+            && !Bypass.has(attacker)
+            && !Events.fireAndTestCancel(new DisallowedPVPEvent(attacker, defender, event))) {
             event.setCancelled(true);
         }
     }

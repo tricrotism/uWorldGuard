@@ -58,8 +58,15 @@ public final class ConfigUpdater {
         }
 
         final List<String> added = new ArrayList<>();
+        final List<String> newSections = new ArrayList<>();
         for (final String key : packaged.getKeys(true)) {
-            if (packaged.isConfigurationSection(key) || live.contains(key)) {
+            if (packaged.isConfigurationSection(key)) {
+                if (!live.contains(key)) {
+                    newSections.add(key);
+                }
+                continue;
+            }
+            if (live.contains(key)) {
                 continue;
             }
             live.set(key, packaged.get(key));
@@ -71,6 +78,7 @@ public final class ConfigUpdater {
         if (added.isEmpty()) {
             return List.of();
         }
+        carrySectionComments(packaged, live, newSections);
         try {
             live.save(file);
         } catch (final IOException e) {
@@ -78,6 +86,28 @@ public final class ConfigUpdater {
             return List.of();
         }
         return added;
+    }
+
+    /**
+     * Copies the comments that document a section the file did not have, once its keys have been
+     * added and the section therefore exists.
+     *
+     * <p>A section's own comments cannot be copied in the loop above, because that loop skips section
+     * keys: setting one would write the packaged section wholesale and take out any sub-key the
+     * release added underneath it. Skipping them entirely lost the comments instead, and a section
+     * header is where the setting is usually explained. A new {@code logging:} block arrived on an
+     * existing install as two bare lines, while a fresh install got the paragraph saying what it does.
+     */
+    private static void carrySectionComments(
+        final YamlConfiguration packaged, final YamlConfiguration live, final List<String> newSections
+    ) {
+        for (final String section : newSections) {
+            if (!live.isConfigurationSection(section)) {
+                continue;
+            }
+            live.setComments(section, packaged.getComments(section));
+            live.setInlineComments(section, packaged.getInlineComments(section));
+        }
     }
 
     private static @org.jspecify.annotations.Nullable YamlConfiguration load(

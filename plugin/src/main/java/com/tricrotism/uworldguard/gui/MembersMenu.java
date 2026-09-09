@@ -91,7 +91,16 @@ public final class MembersMenu {
                 .addLoreLines(
                     Messages.format(owner ? "<!i><gray>Owner" : "<!i><gray>Member"),
                     Messages.format("<!i><dark_gray>Click to remove")))
-            .addClickHandler((_, _) -> {
+            .addClickHandler((_, click) -> {
+                final Player clicker = click.player();
+                if (MenuItems.denied(clicker, MenuItems.MEMBERS)) {
+                    return;
+                }
+                if (manager.getRegion(regionId) != region) {
+                    clicker.sendMessage(Messages.format("<red>Region <aqua><id></aqua> no longer exists.",
+                        Placeholder.unparsed("id", regionId)));
+                    return;
+                }
                 (owner ? region.getOwners() : region.getMembers()).removePlayer(uuid);
                 manager.markDirty();
                 if (gui != null) {
@@ -111,6 +120,9 @@ public final class MembersMenu {
     }
 
     private void promptAdd(final Player player, final boolean owner) {
+        if (MenuItems.denied(player, MenuItems.MEMBERS)) {
+            return;
+        }
         player.closeInventory();
         player.sendMessage(Messages.format("<gray>Type the player name to add, or <red>cancel</red>."));
         chatInput.await(player.getUniqueId(), name ->

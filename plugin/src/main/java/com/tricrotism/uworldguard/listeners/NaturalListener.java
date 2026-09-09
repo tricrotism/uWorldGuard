@@ -76,7 +76,7 @@ public final class NaturalListener implements Listener {
         }
         final StateFlag flag = switch (event.getCause()) {
             case LAVA -> Flags.LAVA_FIRE;
-            case FLINT_AND_STEEL -> Flags.LIGHTER;
+            case FLINT_AND_STEEL, FIREBALL, ARROW -> Flags.LIGHTER;
             case SPREAD -> Flags.FIRE_SPREAD;
             default -> null;
         };

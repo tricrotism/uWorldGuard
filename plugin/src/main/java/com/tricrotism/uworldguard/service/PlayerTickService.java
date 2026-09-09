@@ -10,13 +10,18 @@ import org.bukkit.WeatherType;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Applies the once-a-second player flags: heal-amount / heal-min-health / heal-max-health, and
@@ -28,16 +33,18 @@ import java.util.Set;
  * scheduler, so health and potion API are only ever touched on the entity's region thread. Region
  * flag reads go through the thread-safe {@link RegionQuery}. The whole tick is skipped when no region
  * on the server uses any of these flags, and each half is skipped per-world via
- * {@link ApplicableRegionSet#worldUses}.
+ * {@link ApplicableRegionSet#worldUses} — except that a player still holding effects this service
+ * granted keeps ticking the effect half until they are stripped.
  */
 @NullMarked
-public final class PlayerTickService {
+public final class PlayerTickService implements Listener {
 
-    private static final int REAPPLY_TICKS = 40;
+    private static final int REAPPLY_TICKS = 300;
 
     private final Plugin plugin;
     private final RegionContainerImpl container;
     private final RegionQuery query;
+    private final Map<UUID, Set<PotionEffectType>> granted = new ConcurrentHashMap<>();
     private long seconds;
     private volatile @Nullable ScheduledTask task;
 
@@ -77,6 +84,12 @@ public final class PlayerTickService {
             running.cancel();
             task = null;
         }
+        granted.clear();
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onQuit(final PlayerQuitEvent event) {
+        granted.remove(event.getPlayer().getUniqueId());
     }
 
     /**
@@ -98,7 +111,8 @@ public final class PlayerTickService {
         if (regions.worldUses(Flags.TIME_LOCK) || regions.worldUses(Flags.WEATHER_LOCK)) {
             lockSky(player, regions);
         }
-        if (regions.worldUses(Flags.GIVE_EFFECTS) || regions.worldUses(Flags.BLOCKED_EFFECTS)) {
+        if (regions.worldUses(Flags.GIVE_EFFECTS) || regions.worldUses(Flags.BLOCKED_EFFECTS)
+            || granted.containsKey(player.getUniqueId())) {
             effects(player, regions);
         }
     }
@@ -214,13 +228,39 @@ public final class PlayerTickService {
         }
     }
 
+    /**
+     * Reapplies give-effects and strips the ones the player has walked out of. The applied duration
+     * outlives the reapply interval by enough that vanilla never starts its low-duration flash, so
+     * expiry can no longer serve as the removal: what the region granted last second is tracked per
+     * player and diffed against what it grants now. Only types this service applied are ever removed,
+     * so a drunk potion survives unless the region happens to grant the same type.
+     */
     private void effects(final Player player, final ApplicableRegionSet regions) {
+        final UUID id = player.getUniqueId();
         final Set<PotionEffect> give = regions.queryValue(Flags.GIVE_EFFECTS);
-        if (give != null) {
+        final Set<PotionEffectType> previous = granted.get(id);
+        if (give == null || give.isEmpty()) {
+            if (previous != null) {
+                granted.remove(id);
+                for (final PotionEffectType type : previous) {
+                    player.removePotionEffect(type);
+                }
+            }
+        } else {
+            final Set<PotionEffectType> current = new HashSet<>(give.size());
             for (final PotionEffect effect : give) {
                 player.addPotionEffect(new PotionEffect(
                     effect.getType(), REAPPLY_TICKS, effect.getAmplifier(), true, false, false));
+                current.add(effect.getType());
             }
+            if (previous != null) {
+                for (final PotionEffectType type : previous) {
+                    if (!current.contains(type)) {
+                        player.removePotionEffect(type);
+                    }
+                }
+            }
+            granted.put(id, current);
         }
 
         final Set<PotionEffect> blocked = regions.queryValue(Flags.BLOCKED_EFFECTS);

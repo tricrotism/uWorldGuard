@@ -6,6 +6,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.ScoreboardManager;
 import org.bukkit.scoreboard.Team;
@@ -43,15 +44,18 @@ public final class PacketSink implements PacketHooks.Sink {
      */
     private static final String TEAM_PREFIX = "uwg_nc_";
 
-    private PacketSink() {
+    private final Plugin plugin;
+
+    private PacketSink(final Plugin plugin) {
+        this.plugin = plugin;
     }
 
     /**
      * Arms {@link PacketHooks}. Only called once uWorldGuard has seen the PacketEvents plugin, so
      * this class is never loaded on a server without it.
      */
-    public static void install() {
-        PacketHooks.install(new PacketSink());
+    public static void install(final Plugin plugin) {
+        PacketHooks.install(new PacketSink(plugin));
     }
 
     /**
@@ -71,6 +75,12 @@ public final class PacketSink implements PacketHooks.Sink {
      *
      * <p>The team entry is passed by name rather than as a {@link Player}, because the caller has it
      * on the thread that owns that player and this runs on the global one.
+     *
+     * <p>Which scoreboard a viewer is on, and what team it has the entry in, are that viewer's own
+     * state: the server keeps the player-to-scoreboard mapping in a plain map that every region
+     * thread writes through {@code setScoreboard}, so reading it from here raced whichever
+     * scoreboard or tab plugin last moved someone. Each viewer therefore gets one hop to their own
+     * scheduler, which is the same shape the rest of the plugin uses to reach another player.
      */
     @Override
     public void collision(final String entry, final boolean disabled) {
@@ -80,10 +90,12 @@ public final class PacketSink implements PacketHooks.Sink {
         }
         final Scoreboard main = manager.getMainScoreboard();
         for (final Player viewer : Bukkit.getOnlinePlayers()) {
-            final Scoreboard board = viewer.getScoreboard();
-            if (board != main) {
-                send(viewer, entry, disabled, board);
-            }
+            viewer.getScheduler().run(plugin, _ -> {
+                final Scoreboard board = viewer.getScoreboard();
+                if (board != main && PacketHooks.ACTIVE) {
+                    send(viewer, entry, disabled, board);
+                }
+            }, null);
         }
     }
 

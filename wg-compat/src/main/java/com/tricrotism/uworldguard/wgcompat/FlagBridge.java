@@ -156,6 +156,15 @@ public final class FlagBridge {
         SHIM_BY_ENGINE_NAME.putIfAbsent(wrapper.getName(), flag);
     }
 
+    /**
+     * Whether the engine flag under this name came from a third-party registration rather than
+     * uWorldGuard itself. Two plugins claiming one name is a real conflict; a plugin claiming a name
+     * uWorldGuard already implements is not.
+     */
+    public static boolean isConsumerFlag(final String name) {
+        return com.tricrotism.uworldguard.flags.Flags.get(name) instanceof BridgedConsumerFlag<?>;
+    }
+
     private static void ensureBound() {
         if (!bound) {
             bindAll();

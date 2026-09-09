@@ -66,6 +66,8 @@ public final class Flags {
     public static final StateFlag MANNEQUIN_MANIPULATE = register(FlagCategory.PROTECTION, new StateFlag("mannequin-manipulate", true));
     public static final StateFlag VAULT_USE = register(FlagCategory.PROTECTION, new StateFlag("vault-use", true));
     public static final StateFlag BUCKET_ENTITY = register(FlagCategory.PROTECTION, new StateFlag("bucket-entity", true));
+    public static final StateFlag BUCKET_FILL = register(FlagCategory.PROTECTION, new StateFlag("bucket-fill", true));
+    public static final StateFlag BUCKET_EMPTY = register(FlagCategory.PROTECTION, new StateFlag("bucket-empty", true));
     public static final StateFlag SHEAR = register(FlagCategory.PROTECTION, new StateFlag("shear", true));
     public static final StateFlag LEASH = register(FlagCategory.PROTECTION, new StateFlag("leash", true));
     public static final StateFlag NAME_ENTITY = register(FlagCategory.PROTECTION, new StateFlag("name-entity", true));

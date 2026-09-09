@@ -120,6 +120,9 @@ public final class PlayerStateListener implements Listener {
         if (Boolean.TRUE.equals(from.queryValue(Flags.EXIT_OVERRIDE))) {
             return;
         }
+        if (!from.testState(Flags.ENTRY, uuid) && !isMember(from, uuid)) {
+            return;
+        }
         final ApplicableRegionSet destination = query.getApplicableRegions(to);
         for (int i = 0, n = from.size(); i < n; i++) {
             if (!contains(destination, from.get(i))) {
@@ -128,6 +131,15 @@ public final class PlayerStateListener implements Listener {
                 return;
             }
         }
+    }
+
+    private static boolean isMember(final ApplicableRegionSet set, final UUID uuid) {
+        for (int i = 0, n = set.size(); i < n; i++) {
+            if (set.get(i).isMember(uuid)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -169,7 +181,7 @@ public final class PlayerStateListener implements Listener {
             return;
         }
         final ApplicableRegionSet set = query.getApplicableRegions(block);
-        if (!set.testState(Flags.CHEST_ACCESS, player.getUniqueId()) && !set.canBuild(player.getUniqueId())) {
+        if (!set.testBuild(player.getUniqueId(), Flags.CHEST_ACCESS)) {
             if (Bypass.has(player)) {
                 return;
             }
@@ -228,7 +240,7 @@ public final class PlayerStateListener implements Listener {
             return;
         }
         final ApplicableRegionSet set = query.getApplicableRegions(event.getVehicle());
-        if (!set.testState(Flags.RIDE, player.getUniqueId()) && !set.canBuild(player.getUniqueId())) {
+        if (!set.testBuild(player.getUniqueId(), Flags.RIDE)) {
             if (Bypass.has(player)) {
                 return;
             }

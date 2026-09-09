@@ -135,6 +135,9 @@ public final class RegionMenu {
                 player.sendMessage(Messages.format("<red>The global region cannot be removed."));
                 return;
             }
+            if (MenuItems.denied(player, MenuItems.REMOVE)) {
+                return;
+            }
             manager.removeRegion(region.getId());
             if (gui != null) {
                 gui.setContent(buildItems());
@@ -176,6 +179,9 @@ public final class RegionMenu {
     }
 
     private void promptCreate(final Player player) {
+        if (MenuItems.denied(player, MenuItems.DEFINE)) {
+            return;
+        }
         final Selection sel = selection.getSelection(player);
         if (sel == null) {
             player.sendMessage(Messages.format("<red>Make a selection first."));
@@ -188,12 +194,10 @@ public final class RegionMenu {
                 player.sendMessage(Messages.format("<red>Region names may only use letters, digits, "
                         + "<aqua>_</aqua> and <aqua>-</aqua>, up to <aqua><max></aqua> characters.",
                     Placeholder.unparsed("max", Integer.toString(ProtectedRegion.MAX_ID_LENGTH))));
-            } else if (manager.hasRegion(name)) {
+            } else if (manager.addRegionIfAbsent(new ProtectedCuboidRegion(name, sel.min(), sel.max())) != null) {
                 player.sendMessage(Messages.format("<red>A region named <aqua><id></aqua> already exists.",
                     Placeholder.unparsed("id", name)));
             } else {
-                final ProtectedCuboidRegion region = new ProtectedCuboidRegion(name, sel.min(), sel.max());
-                manager.addRegion(region);
                 player.sendMessage(Messages.format("<green>Created region <aqua><id></aqua>.",
                     Placeholder.unparsed("id", name)));
             }

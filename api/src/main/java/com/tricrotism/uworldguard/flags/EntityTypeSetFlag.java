@@ -41,12 +41,17 @@ public final class EntityTypeSetFlag extends Flag<Set<EntityType>> {
             return parse(String.valueOf(stored));
         }
         final Set<EntityType> types = EnumSet.noneOf(EntityType.class);
+        final List<String> unreadable = new ArrayList<>(0);
         for (final Object element : list) {
-            final EntityType type = entityType(String.valueOf(element));
+            final String token = String.valueOf(element);
+            final EntityType type = entityType(token);
             if (type != null) {
                 types.add(type);
+            } else {
+                unreadable.add(token);
             }
         }
+        DroppedValues.report(getName(), unreadable);
         return types.isEmpty() ? null : types;
     }
 

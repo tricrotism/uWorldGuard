@@ -32,6 +32,11 @@ public class SimpleFlagRegistry implements FlagRegistry {
      */
     private final Set<String> worldGuardNames;
 
+    /**
+     * Names already adopted, so the same registration retried after a reload does not log again.
+     */
+    private final Set<String> adopted = ConcurrentHashMap.newKeySet();
+
     private volatile boolean initialized = true;
 
     public SimpleFlagRegistry() {
@@ -60,7 +65,12 @@ public class SimpleFlagRegistry implements FlagRegistry {
         }
         final String key = name.toLowerCase(Locale.ROOT);
         if (flags.containsKey(key) || com.tricrotism.uworldguard.flags.WgFlagNames.resolve(name) != null) {
-            throw conflict(name, key);
+            if (worldGuardNames.contains(key)
+                || com.tricrotism.uworldguard.wgcompat.FlagBridge.isConsumerFlag(name)) {
+                throw conflict(name, key);
+            }
+            adopt(key);
+            return;
         }
         try {
             com.tricrotism.uworldguard.wgcompat.FlagBridge.registerConsumerFlag(flag);
@@ -74,26 +84,45 @@ public class SimpleFlagRegistry implements FlagRegistry {
     }
 
     /**
-     * Builds the conflict, and logs it. A caller that used {@link #registerAll} never sees the
-     * exception — WorldGuard's contract is to skip conflicts silently — which leaves an operator with
-     * a flag that is simply absent and nothing to explain it.
+     * Accepts a registration that names a flag uWorldGuard already implements itself.
      *
-     * <p>The distinction in the message matters: uWorldGuard's flag set is a superset of
-     * WorldGuard's, so a name WorldGuard never claimed can still be taken here. A plugin that
-     * registers cleanly on WorldGuard and conflicts on uWorldGuard has hit that, and neither its
-     * author nor the operator can tell from "already registered" alone.
+     * <p>uWorldGuard's flag set is a superset of WorldGuard's, so a plugin whose flags register
+     * cleanly on WorldGuard can find every one of its names taken here. WorldGuardExtraFlags is the
+     * whole of that case: all 25 of its names are uWorldGuard built-ins, and it turns the conflict
+     * into a {@code RuntimeException} out of {@code onLoad}, so throwing takes the plugin down at
+     * boot with nothing the operator can rename.
+     *
+     * <p>Returning instead leaves the registrant's flag object unbound. Its own handlers then read
+     * nothing and do nothing, and uWorldGuard's implementation of the flag stays in charge, which is
+     * the behaviour the operator already had. A name owned by WorldGuard, or by another plugin's
+     * flag, still conflicts: on those, throwing is what WorldGuard does.
+     */
+    private void adopt(final String key) {
+        if (adopted.add(key) && (adopted.size() == 1
+            || com.tricrotism.uworldguard.util.VerboseLogging.enabled())) {
+            Logger.getLogger("uWorldGuard").info("[wg-compat] A plugin registered the flag '" + key
+                + "', which uWorldGuard implements natively. The registration was accepted and"
+                + " uWorldGuard keeps handling the flag. Enable logging.verbose to list the rest.");
+        }
+    }
+
+    /**
+     * Builds the conflict, and logs it. A caller that used {@link #registerAll} never sees the
+     * exception, because WorldGuard's contract is to skip conflicts silently, which leaves an
+     * operator with a flag that is simply absent and nothing to explain it.
      */
     private FlagConflictException conflict(final String name, final String key) {
         final StringBuilder message = new StringBuilder(128)
             .append("A flag named '").append(name).append("' is already registered");
         if (!worldGuardNames.contains(key)) {
-            message.append(" — as a built-in uWorldGuard flag, which WorldGuard does not define.")
-                .append(" This registration succeeds on WorldGuard and conflicts here. Rename the")
-                .append(" flag to something plugin-specific, or read the existing '").append(key)
-                .append("' flag instead of registering your own.");
+            message.append(", by another plugin. Rename the flag to something plugin-specific, or")
+                .append(" read the existing '").append(key).append("' flag instead of registering")
+                .append(" your own.");
         }
         final String text = message.toString();
-        Logger.getLogger("uWorldGuard").warning("[wg-compat] " + text);
+        if (com.tricrotism.uworldguard.util.VerboseLogging.enabled()) {
+            Logger.getLogger("uWorldGuard").warning("[wg-compat] " + text);
+        }
         return new FlagConflictException(text);
     }
 

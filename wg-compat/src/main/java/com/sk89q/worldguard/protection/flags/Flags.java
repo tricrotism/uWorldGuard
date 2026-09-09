@@ -26,6 +26,11 @@ import java.util.function.Supplier;
 public final class Flags {
 
     private static final List<Flag<?>> ALL = new ArrayList<>(112);
+    /**
+     * Built once over {@link #ALL} rather than per call: the list is fixed after class init, and the
+     * callers walk it at boot.
+     */
+    private static final List<Flag<?>> ALL_VIEW = java.util.Collections.unmodifiableList(ALL);
 
     public static final StateFlag PASSTHROUGH = add(state("passthrough", false));
     public static final SetFlag<String> NONPLAYER_PROTECTION_DOMAINS = add(strings("nonplayer-protection-domains"));
@@ -66,7 +71,7 @@ public final class Flags {
     public static final StateFlag ENTITY_ITEM_FRAME_DESTROY = add(state("entity-item-frame-destroy", true));
     public static final StateFlag WITHER_DAMAGE = add(state("wither-damage", true));
     public static final StateFlag BREEZE_WIND_CHARGE = add(state("breeze-charge-explosion", true));
-    public static final StateFlag WIND_CHARGE_BURST = add(state("wind-charge-burst", false));
+    public static final StateFlag WIND_CHARGE_BURST = add(state("wind-charge-burst", true));
 
     public static final StateFlag LAVA_FIRE = add(state("lava-fire", true));
     public static final StateFlag LIGHTNING = add(state("lightning", true));
@@ -189,7 +194,7 @@ public final class Flags {
      * Internal: every built-in flag, in declaration order. Not part of the WorldGuard API.
      */
     public static List<Flag<?>> uwgAll() {
-        return ALL;
+        return ALL_VIEW;
     }
 
     private static <F extends Flag<?>> F add(final F flag) {

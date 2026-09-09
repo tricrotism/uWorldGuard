@@ -15,6 +15,7 @@ invui = "2.2.0"
 caffeine = "3.1.8"
 bstats = "3.2.1"
 junit = "5.11.4"
+vanniktech-publish = "0.37.0"
 
 [libraries]
 cloud-paper = { module = "org.incendo:cloud-paper", version.ref = "cloud-paper" }
@@ -32,3 +33,4 @@ junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 paperweight-userdev = { id = "io.papermc.paperweight.userdev", version.ref = "paperweight-userdev" }
 run-paper = { id = "xyz.jpenilla.run-paper", version.ref = "run-task" }
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
+vanniktech-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-publish" }

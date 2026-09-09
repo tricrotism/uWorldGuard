@@ -2,15 +2,13 @@ package com.tricrotism.uworldguard;
 
 import com.tricrotism.uworldguard.commands.CompatCommands;
 import com.tricrotism.uworldguard.commands.RegionCommands;
-import com.tricrotism.uworldguard.config.Bypass;
-import com.tricrotism.uworldguard.config.ConfigUpdater;
-import com.tricrotism.uworldguard.config.EventGate;
-import com.tricrotism.uworldguard.config.Settings;
+import com.tricrotism.uworldguard.config.*;
 import com.tricrotism.uworldguard.gui.ChatInputListener;
 import com.tricrotism.uworldguard.gui.ChatInputService;
-import com.tricrotism.uworldguard.integration.GSitIntegration;
+import com.tricrotism.uworldguard.integration.ReportedVersion;
 import com.tricrotism.uworldguard.listeners.*;
 import com.tricrotism.uworldguard.migration.MigrationCommands;
+import com.tricrotism.uworldguard.packet.PacketHooks;
 import com.tricrotism.uworldguard.packet.PacketSink;
 import com.tricrotism.uworldguard.region.RegionContainer;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
@@ -66,7 +64,8 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         if (current != null) {
             current.load(getConfig());
         }
-        EventGate.load(getConfig());
+        EventGate.load(getConfig(), getLogger());
+        InteractionWhitelist.load(getConfig(), getLogger());
         final MovementListener listener = this.movement;
         if (listener != null && current != null) {
             listener.applySettings(current);
@@ -96,23 +95,35 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
             _ -> regionContainer.saveAll(), period, period, TimeUnit.MINUTES);
     }
 
+    /**
+     * Publishes the reported version before any other plugin loads.
+     *
+     * <p>Consumers read the WorldGuard version at two moments, and one of them is their own
+     * {@code onLoad} — PvPManager registers its region flag there and skips it when the version
+     * check fails. Doing this at enable is already too late for those, so it happens here, off the
+     * config file directly: {@link Settings} is not built until enable.
+     */
+    @Override
+    public void onLoad() {
+        ReportedVersion.publish(this, getConfig().getString("compatibility.report-version", ""), getLogger());
+    }
+
     @Override
     public void onEnable() {
         InvUI.getInstance().setPlugin(this);
         saveDefaultConfig();
         final List<String> addedSettings =
             ConfigUpdater.merge(this, new File(getDataFolder(), "config.yml"), "config.yml");
+        reloadConfig();
         if (!addedSettings.isEmpty()) {
-            reloadConfig();
             getLogger().info("config.yml gained " + addedSettings.size()
                 + " new setting(s) from this version: " + String.join(", ", addedSettings));
         }
         final Settings settings = new Settings();
         settings.load(getConfig());
         this.settings = settings;
-        EventGate.load(getConfig());
-
-        GSitIntegration.registerFlags();
+        EventGate.load(getConfig(), getLogger());
+        InteractionWhitelist.load(getConfig(), getLogger());
         final boolean worldGuardCompat = prepareWorldGuardCompat();
 
         final RegionStore store = createStore(settings);
@@ -181,6 +192,7 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         movement.replayOnlineRestores();
         final PlayerTickService playerTick = new PlayerTickService(this, regionContainer, query);
         this.playerTick = playerTick;
+        getServer().getPluginManager().registerEvents(playerTick, this);
         playerTick.start();
         chunkUnload.start();
 
@@ -188,9 +200,6 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
             final WorldEditFlagGuard guard = new WorldEditFlagGuard(query, regionContainer);
             guard.register();
             this.worldEditGuard = guard;
-        }
-        if (GSitIntegration.isPresent(getServer())) {
-            new GSitIntegration(query).register(this);
         }
 
         scheduleAutoSave(settings);
@@ -249,7 +258,7 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         WgCompatBridge.bind(regionContainer, this);
         WgCompatBridge.bypassCheck(Bypass::has);
         getLogger().info("WorldGuard API compatibility layer active (emulating the WorldGuard 7 API"
-            + " — this is uWorldGuard " + getPluginMeta().getVersion()
+            + " — this is uWorldGuard " + ReportedVersion.real(this)
             + ", not EngineHub WorldGuard).");
     }
 
@@ -266,7 +275,7 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
             return;
         }
         try {
-            PacketSink.install();
+            PacketSink.install(this);
         } catch (final LinkageError | RuntimeException e) {
             getLogger().log(Level.WARNING, "PacketEvents is installed but its API could not be used;"
                 + " players on a per-player scoreboard will not get client-side disable-collision.", e);
@@ -288,9 +297,29 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
     /**
      * Releases in dependency order: stop the things that read regions, then the ones that hold state
      * outside this plugin, then write the regions out.
+     *
+     * <p>The write is the one step that must happen. Everything before it touches players, foreign
+     * plugins and a third-party packet library on a server that is already tearing down, and any one
+     * of them throwing used to take the region save with it — an unclean shutdown lost every change
+     * made since the last autosave.
      */
     @Override
     public void onDisable() {
+        try {
+            releaseRuntime();
+        } catch (final RuntimeException | LinkageError e) {
+            getLogger().log(Level.SEVERE, "Error while shutting down; saving regions anyway.", e);
+        }
+        if (container != null) {
+            container.saveAllBlocking();
+        }
+        if (store != null) {
+            store.close();
+            store = null;
+        }
+    }
+
+    private void releaseRuntime() {
         SessionDispatch.shutdown();
         WgCompatBridge.unbind();
         UWorldGuardApi.bind(null);
@@ -322,17 +351,12 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         if (collision != null) {
             collision.shutdown();
         }
-        PacketSink.uninstall();
+        if (PacketHooks.ACTIVE) {
+            PacketSink.uninstall();
+        }
         if (metrics != null) {
             metrics.shutdown();
             metrics = null;
-        }
-        if (container != null) {
-            container.saveAllBlocking();
-        }
-        if (store != null) {
-            store.close();
-            store = null;
         }
     }
 }

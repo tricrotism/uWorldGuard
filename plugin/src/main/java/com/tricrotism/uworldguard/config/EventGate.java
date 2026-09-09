@@ -1,11 +1,13 @@
 package com.tricrotism.uworldguard.config;
 
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.event.Event;
 import org.bukkit.event.block.BlockEvent;
 import org.bukkit.event.entity.EntityEvent;
+import org.bukkit.event.inventory.InventoryEvent;
 import org.bukkit.event.inventory.InventoryInteractEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerEvent;
@@ -19,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.Logger;
 
 /**
  * Per-world event gate. A world may list Bukkit events (by class simple name) that uWorldGuard should
@@ -67,7 +70,7 @@ public final class EventGate {
     /**
      * (Re)load the per-world event filters from {@code config.yml}.
      */
-    public static void load(final FileConfiguration config) {
+    public static void load(final FileConfiguration config, final Logger log) {
         final ConfigurationSection worlds = config.getConfigurationSection("worlds");
         if (worlds == null) {
             byWorld = Map.of();
@@ -87,6 +90,11 @@ public final class EventGate {
             // disables everything, so only the empty blacklist is a no-op worth skipping.
             if (disabled.isEmpty() && !whitelist) {
                 continue;
+            }
+            if (disabled.isEmpty()) {
+                log.warning("World '" + world + "' sets events.whitelist-mode: true with an empty"
+                    + " disabled list, so uWorldGuard acts on no event at all there — that world is"
+                    + " unprotected. List the events to act on, or set whitelist-mode: false.");
             }
             map.put(world, new WorldFilter(Set.copyOf(disabled), whitelist));
         }
@@ -148,6 +156,10 @@ public final class EventGate {
         }
         if (event instanceof InventoryInteractEvent e) {
             return e.getWhoClicked().getWorld();
+        }
+        if (event instanceof InventoryEvent e) {
+            final Location location = e.getInventory().getLocation();
+            return location == null ? null : location.getWorld();
         }
         return null;
     }

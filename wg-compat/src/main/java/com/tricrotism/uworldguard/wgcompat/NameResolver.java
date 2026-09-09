@@ -66,7 +66,7 @@ public final class NameResolver {
      * Warns once, for the whole server lifetime, that a name-keyed domain edit could not be resolved.
      */
     public static void warnUnresolved(final String member, final String name) {
-        if (WARNED.compareAndSet(false, true)) {
+        if (com.tricrotism.uworldguard.util.VerboseLogging.enabled() && WARNED.compareAndSet(false, true)) {
             Bukkit.getLogger().log(Level.WARNING,
                 "[uWorldGuard] A plugin called " + member + " with the name '" + name
                     + "', which is not in this server's player cache. uWorldGuard stores region"

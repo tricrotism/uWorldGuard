@@ -32,7 +32,7 @@ public final class WorldGuard {
 
     private static final WorldGuard INSTANCE = new WorldGuard();
 
-    private static final String API_VERSION = "7.0.18";
+    private static final String API_VERSION = com.tricrotism.uworldguard.util.WorldGuardApiLevel.VERSION;
 
     private volatile WorldGuardPlatform platform;
     private volatile FlagRegistry flagRegistry;

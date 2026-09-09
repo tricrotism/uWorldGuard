@@ -185,11 +185,11 @@ public final class ApplicableRegionSet {
         boolean memberOfTop = false;
         for (int i = 0, n = applicable.size(); i < n; i++) {
             final ProtectedRegion region = applicable.get(i);
-            if (region.getPriority() != topPriority) {
-                break;
-            }
             if (region.getFlag(Flags.PASSTHROUGH) == State.ALLOW) {
                 continue;
+            }
+            if (region.getPriority() != topPriority) {
+                break;
             }
             final State v = appliesTo(region, Flags.BUILD, subject) ? region.getFlag(Flags.BUILD) : null;
             if (v != null) {
@@ -204,6 +204,57 @@ public final class ApplicableRegionSet {
             return explicit == State.ALLOW;
         }
         return memberOfTop;
+    }
+
+    /**
+     * WorldGuard's build test, and the check every build-shaped protection should use: an explicit
+     * {@code DENY} on {@code flag} refuses outright, an explicit {@code ALLOW} permits regardless of
+     * membership, and only an unset flag falls back to {@link #canBuild}.
+     *
+     * <p>This is deliberately not {@code canBuild(subject) && testState(flag, subject)}. That form
+     * makes an explicit {@code allow} inert in any region the subject is not a member of, because the
+     * membership deny short-circuits it — so the standard "spawn where anyone may place blocks"
+     * configuration silently did nothing. WorldGuard converts the build result's deny to nothing
+     * before combining it with the flag, which is what the ordering below reproduces.
+     *
+     * <p>It also resolves {@code flag} without its default: a flag nobody set contributes nothing and
+     * leaves membership to decide, rather than contributing the {@code allow} that most protection
+     * flags default to.
+     */
+    public boolean testBuild(final @Nullable UUID subject, final StateFlag flag) {
+        final State explicit = resolveState(flag, subject);
+        if (explicit == State.DENY) {
+            return false;
+        }
+        return explicit == State.ALLOW || canBuild(subject);
+    }
+
+    /**
+     * {@link #testBuild(UUID, StateFlag)} over two flags, as WorldGuard combines them: either one
+     * denying refuses, either one allowing permits, and only with both unset does membership decide.
+     * A dedicated overload rather than varargs because the callers are per-interact.
+     */
+    public boolean testBuild(
+        final @Nullable UUID subject, final StateFlag first, final StateFlag second
+    ) {
+        final State a = resolveState(first, subject);
+        if (a == State.DENY) {
+            return false;
+        }
+        final State b = resolveState(second, subject);
+        if (b == State.DENY) {
+            return false;
+        }
+        return a == State.ALLOW || b == State.ALLOW || canBuild(subject);
+    }
+
+    /**
+     * The value some region actually sets for {@code flag}, or {@code null} if none does. Unlike
+     * {@link #queryState} this never substitutes the flag's default, so a caller can tell "nobody
+     * configured this" apart from "someone allowed it" and fall through to another rule.
+     */
+    public @Nullable State queryExplicitState(final StateFlag flag, final @Nullable UUID subject) {
+        return resolveState(flag, subject);
     }
 
     /**

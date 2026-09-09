@@ -128,6 +128,21 @@ public final class SessionDispatch {
     }
 
     /**
+     * Releases what the compat layer holds for a player who has left. Separate from
+     * {@link #uninitialize} because that one only runs while a consumer has session handlers
+     * registered, and a consumer that merely reads flags still had a wrapper built for it.
+     *
+     * <p>Gated on the layer being active so a server without WorldEdit never reaches
+     * {@code PlayerWrapping}, whose initialiser resolves WorldEdit types. The gate is a volatile read,
+     * and when it is false the call below is never executed and so never linked.
+     */
+    public static void forget(final Player player) {
+        if (WgCompatBridge.active()) {
+            PlayerWrapping.forget(player.getUniqueId());
+        }
+    }
+
+    /**
      * The counterpart to {@link #install}, called from uWorldGuard's disable before the compat layer
      * is unbound — while the engine a handler's {@code uninitialize} may call back into is still
      * live.

@@ -31,10 +31,6 @@ dependencies:
             load: BEFORE
             required: false
             join-classpath: true
-        GSit:
-            load: BEFORE
-            required: false
-            join-classpath: true
 
 authors: [ tricrotism ]
 website: https://tricrotism.com
@@ -68,6 +64,9 @@ permissions:
         default: op
     uworldguard.region.define:
         description: Create regions.
+        default: op
+    uworldguard.region.redefine:
+        description: Reshape existing regions, keeping their flags and members.
         default: op
     uworldguard.region.remove:
         description: Remove regions.

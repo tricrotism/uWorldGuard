@@ -77,7 +77,7 @@ A `pvp deny` shop inside a `pvp allow` arena works — give the shop a higher pr
 **Parents** let a region inherit its parent's flags, so you set a rule once and every child gets it:
 
 ```
-/wg setparent shop mall
+/wg parent shop mall
 ```
 
 ### Bypassing your own rules
@@ -102,39 +102,49 @@ effect immediately even if the player is already armed.
 
 Every command works as `/uworldguard`, `/uwg`, `/worldguard`, or `/wg`. Use whichever you like.
 
-| Command                                                      | What it does                                         |
-|--------------------------------------------------------------|------------------------------------------------------|
-| `/wg`                                                        | List all commands                                    |
-| `/wg define <id>`                                            | Create a box-shaped region from your selection       |
-| `/wg define-cylinder <id> <radiusX> <radiusZ> <minY> <maxY>` | Create a cylinder where you're standing              |
-| `/wg define-sphere <id> <radiusX> <radiusY> <radiusZ>`       | Create a sphere where you're standing                |
-| `/wg define-polygon <id> <minY> <maxY>`                      | Create a polygon from a WorldEdit selection          |
-| `/wg remove <id>`                                            | Delete a region                                      |
-| `/wg list [page]`                                            | List regions in this world                           |
-| `/wg here`                                                   | What region am I standing in?                        |
-| `/wg info <id>`                                              | Show a region's owners, members, flags, priority     |
-| `/wg flag <id> <flag> [value]`                               | Set a flag (leave value blank to clear it)           |
-| `/wg priority <id> <priority>`                               | Set which region wins when they overlap              |
-| `/wg setparent <id> [parent]`                                | Inherit flags from another region                    |
-| `/wg removeparent <id>`                                      | Stop inheriting                                      |
-| `/wg addowner` / `removeowner <id> <player>`                 | Manage owners                                        |
-| `/wg addmember` / `removemember <id> <player>`               | Manage members                                       |
-| `/wg menu [id]`                                              | Open the region browser, or one region's flag editor |
-| `/wg settings`                                               | Edit messages and cooldowns in-game                  |
-| `/wg bypass`                                                 | Toggle your own bypass                               |
-| `/wg reload`                                                 | Reload config and messages                           |
+`/wg` on its own is the place to start: three commands to try first, then one clickable row per section.
+`/wg help <section>` prints that section, `/wg help all` prints everything.
+
+| Command                                                      | What it does                                                                |
+|--------------------------------------------------------------|-----------------------------------------------------------------------------|
+| `/wg`                                                        | Start here — sections, and the three commands worth knowing first           |
+| `/wg help <section>`                                         | The commands in one section (`regions`, `flags`, `people`, …) or `all`      |
+| `/wg define <id>`                                            | Create a region from your selection, a polygon if the selection is one      |
+| `/wg define <id> cylinder <radiusX> <radiusZ> <minY> <maxY>` | Create a cylinder where you're standing                                     |
+| `/wg define <id> sphere <radiusX> <radiusY> <radiusZ>`       | Create a sphere where you're standing                                       |
+| `/wg define <id> polygon <minY> <maxY>`                      | Create a polygon from a WorldEdit selection, with a Y range of your own     |
+| `/wg redefine <id> [shape] [...]`                            | Reshape a region, keeping its flags, members and priority                   |
+| `/wg remove <id>`                                            | Delete a region                                                             |
+| `/wg list [page]`                                            | List regions in this world                                                  |
+| `/wg here`                                                   | What region am I standing in?                                               |
+| `/wg info <id>`                                              | Show a region's owners, members, flags, priority                            |
+| `/wg flag <id> <flag> [value]`                               | Set a flag (leave value blank to clear it, `-g` to limit who it applies to) |
+| `/wg priority <id> <priority>`                               | Set which region wins when they overlap                                     |
+| `/wg parent <id> [parent]`                                   | Inherit flags from another region — name no parent to stop inheriting       |
+| `/wg owner <add\|remove> <id> <player>`                      | Manage owners                                                               |
+| `/wg member <add\|remove> <id> <player>`                     | Manage members                                                              |
+| `/wg menu [id]`                                              | Open the region browser, or one region's flag editor                        |
+| `/wg settings`                                               | Edit messages and cooldowns in-game                                         |
+| `/wg bypass`                                                 | Toggle your own bypass                                                      |
+| `/wg reload`                                                 | Reload config and messages                                                  |
+
+The spellings this replaced still work and always will, they are just kept out of the help so the list stays short:
+`define-cylinder`, `define-sphere`, `define-polygon` and their `redefine-` twins,
+`addowner`, `removeowner`, `addmember`, `removemember`, `setparent` and `removeparent`. If you have those in a command
+block or a wiki page, nothing needs changing.
 
 ### Permissions
 
 | Node                           | Grants                                            |
 |--------------------------------|---------------------------------------------------|
-| `uworldguard.region.define`    | All four `define-*` commands                      |
+| `uworldguard.region.define`    | `define`, in every shape                          |
+| `uworldguard.region.redefine`  | `redefine`, in every shape                        |
 | `uworldguard.region.remove`    | `remove`                                          |
 | `uworldguard.region.list`      | `list`                                            |
 | `uworldguard.region.info`      | `info`, `here`                                    |
 | `uworldguard.region.flag`      | `flag`                                            |
 | `uworldguard.region.priority`  | `priority`                                        |
-| `uworldguard.region.setparent` | `setparent`, `removeparent`                       |
+| `uworldguard.region.setparent` | `parent`                                          |
 | `uworldguard.region.members`   | Owner and member commands                         |
 | `uworldguard.menu`             | `menu`                                            |
 | `uworldguard.settings`         | `settings`                                        |
@@ -170,18 +180,22 @@ Groups: `all` · `members` · `owners` · `nonmembers` · `nonowners` · `none`.
 WorldGuard's spellings work too, so `non-members` and `non_members` are both accepted.
 
 <details>
-<summary><b>Protection</b> — who can touch what (38 flags)</summary>
+<summary><b>Protection</b> — who can touch what (40 flags)</summary>
 
 `build` · `block-break` · `block-place` · `interact` · `use` · `chest-access` · `pvp` ·
 `damage-animals` · `fall-damage` · `ride` · `sleep` · `tnt` · `lighter` · `end-crystal-place` ·
 `end-crystal-interact` · `worldedit` · `pistons` · `passthrough` · `entity-item-frame-destroy` ·
 `entity-painting-destroy` · `vehicle-place` · `vehicle-destroy` · `potion-splash` ·
 `firework-damage` · `use-anvil` · `respawn-anchors` · `use-dripleaf` · `sign-edit` · `tnt-prime` ·
-`armor-stand-manipulate` · `mannequin-manipulate` · `vault-use` · `bucket-entity` · `shear` ·
-`leash` · `name-entity` · `flower-pot` · `lectern`
+`armor-stand-manipulate` · `mannequin-manipulate` · `vault-use` · `bucket-entity` ·
+`bucket-fill` · `bucket-empty` · `shear` · `leash` · `name-entity` · `flower-pot` · `lectern`
 
 `sign-edit` matters because signs are editable after placement since 1.20. `vault-use` and
 `mannequin-manipulate` cover the trial-chamber vault (1.21) and the mannequin (26.x).
+
+`bucket-fill` and `bucket-empty` govern scooping and pouring on their own. Set either one and it decides; leave both
+unset and buckets fall back to `block-break` / `block-place` and the material lists, so configs written before these
+flags existed are unaffected.
 
 `passthrough` is the odd one: it makes a region *not* apply protection, letting lower-priority
 regions decide instead.
@@ -248,8 +262,6 @@ half, which is the one that reverts farmland to dirt and breaks the crop above i
 `portal-create`
 
 `nether-portals` governs travelling through a portal; `portal-create` governs lighting a new one.
-
-With **GSit** installed, four more appear here: `sit`, `playersit`, `pose`, `crawl`.
 </details>
 
 <details>
@@ -313,7 +325,7 @@ list is refused.
 
 ### Configuration
 
-`config.yml` ships with comments explaining every option. The three that matter:
+`config.yml` ships with comments explaining every option. The four that matter:
 
 **Storage.** YAML by default — one file per world, no setup. Switch to SQL if you'd rather:
 
@@ -360,6 +372,36 @@ worlds:
 
 Events are named by their Bukkit class. Apply changes with `/wg reload`.
 
+**Interaction whitelist.** `interact` and `use` are all-or-nothing: deny them and every right-click in the region goes
+with them. List the blocks that should stay usable anyway:
+
+```yaml
+interaction:
+    whitelist:
+        - NOTE_BLOCK
+        - ANVIL
+        - ENCHANTING_TABLE
+```
+
+Anything left off the list keeps behaving as it did — deny `interact` with the list above and trapdoors are protected
+while note blocks, anvils and enchanting tables still work. Only the blanket check is skipped: flags naming a specific
+block (`chest-access`, `use-anvil`, `permit-workbenches`,
+`lectern`, `sign-edit`) still apply, so whitelisting a note block doesn't open every chest.
+
+A single world can allow more than the global list does:
+
+```yaml
+worlds:
+    creative:
+        interaction:
+            whitelist:
+                - LEVER
+```
+
+The two add up — a block is exempt if either list names it. There's no way to take a globally whitelisted block back for
+one world, so if only some worlds should allow it, put it in their lists rather than the global one. Apply changes with
+`/wg reload`.
+
 ### Messages
 
 `messages.yml` controls what players are told. Every entry is MiniMessage, and every entry can be
@@ -403,7 +445,6 @@ All optional — install them or don't, nothing breaks either way.
 |--------------------|----------------------------------------------------------------------------------------------------------------------------------------|
 | **WorldEdit**      | Use WorldEdit selections instead of the built-in wand; required for `define-polygon`; activates the WorldGuard API compatibility layer |
 | **PlaceholderAPI** | `%placeholders%` in message flags and in `entry-min-level` / `entry-max-level`                                                         |
-| **GSit**           | Four extra flags — `sit`, `playersit`, `pose`, `crawl` — enforced by uWorldGuard, since GSit can't see region flags on its own         |
 | **PacketEvents**   | Makes `disable-collision` work for players another plugin has put on a per-player scoreboard                                           |
 
 **What PacketEvents changes.** One thing, and only for a niche case. uWorldGuard's no-collision team lives on the *main*
@@ -430,8 +471,25 @@ plugins, …) link against a bundled compatibility layer that answers with uWorl
   compatibility layer cannot coexist. uWorldGuard detects the conflict and keeps the layer off with a loud log message.
 - Plugins that `depend`/`softdepend` on WorldGuard load and order correctly;
   `getPlugin("WorldGuard")` resolves to uWorldGuard.
-- **Version checks:** uWorldGuard reports its own version (1.x), not "7.x". A plugin that gates its WorldGuard hook on a
-  version string starting with `7` will decline to hook, even though the API is present.
+- **Version checks:** a plugin that gates its WorldGuard hook on a version string starting with `7` would decline to
+  hook against a 1.x plugin, even though the API is present, and Paper attaches no version to a *provided* plugin name.
+  So uWorldGuard publishes the WorldGuard API level it implements (`7.0.18`) in place of its own version. It is one
+  field per plugin, so it is all-or-nothing: `/version` and bStats report it too. uWorldGuard's own log lines and its
+  update check keep using the real version. PvPManager and BetonQuest are two that need this; set
+  `compatibility.report-version` to `none` in `config.yml` to publish the real version instead, or to a version of your
+  own. A few plugins read the version out of `plugin.yml` in the jar rather than from the plugin metadata, which a
+  `paper-plugin.yml` plugin does not ship; uWorldGuard answers that read with a WorldGuard descriptor carrying the same
+  published version. MythicMobs is one, and without it logs only `Failed to enable support for WorldGuard`.
+- **Flags another plugin registers under a name uWorldGuard already uses** are accepted rather than rejected.
+  uWorldGuard implements every WorldGuardExtraFlags flag natively, so on a strict registry that plugin cannot register a
+  single one of its 25 flags and takes itself down at boot. The registration is a no-op instead: uWorldGuard keeps
+  handling the flag, and the registrant's own handlers read nothing and do nothing. Two *plugins* claiming one new name
+  still conflict, as on WorldGuard.
+- **`DisallowedPVPEvent`** is fired when the `pvp` flag is about to deny an attack, and cancelling it lets the attack
+  through, so a combat plugin can put its own rules above the flag. PvPManager registers a listener for it and refuses
+  its whole WorldGuard hook when the class is absent. uWorldGuard also fires it for fire-aspect and flame-bow ignition,
+  which it blocks in a `pvp: deny` region and WorldGuard does not, so an override reaches that too rather than applying
+  to half the attack.
 - **Session handlers** registered through `SessionManager.registerHandler` are driven by uWorldGuard's own movement
   tracker: `testMoveTo` and `onCrossBoundary` fire on every region crossing — walking, swimming, gliding, riding,
   mounting, teleporting and respawning each report their own `MoveType` — with `tick` once a second and `initialize`/

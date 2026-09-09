@@ -95,7 +95,7 @@ public class ProtectedCuboidRegion extends ProtectedRegion {
 
     private void warnImmutable(final String member) {
         com.tricrotism.uworldguard.wgcompat.CompatDiagnostics.stub("ProtectedCuboidRegion." + member);
-        if (WARNED.compareAndSet(false, true)) {
+        if (com.tricrotism.uworldguard.util.VerboseLogging.enabled() && WARNED.compareAndSet(false, true)) {
             LOG.log(java.util.logging.Level.WARNING,
                 "A plugin called ProtectedCuboidRegion.{0} on region ''{1}''. uWorldGuard''s cuboids"
                     + " are immutable — the call did nothing. Redefine the region instead."

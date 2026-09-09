@@ -4,6 +4,7 @@ import com.tricrotism.uworldguard.config.Bypass;
 import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.flags.StateFlag;
+import com.tricrotism.uworldguard.region.ApplicableRegionSet;
 import com.tricrotism.uworldguard.region.RegionQuery;
 import com.tricrotism.uworldguard.text.MessageService;
 import io.papermc.paper.event.player.PlayerFlowerPotManipulateEvent;
@@ -11,9 +12,9 @@ import io.papermc.paper.event.player.PlayerInsertLecternBookEvent;
 import io.papermc.paper.event.player.PlayerNameEntityEvent;
 import io.papermc.paper.event.player.PlayerOpenSignEvent;
 import org.bukkit.block.Block;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.Mannequin;
-import org.bukkit.entity.Player;
+import org.bukkit.entity.*;
+import org.bukkit.entity.minecart.HopperMinecart;
+import org.bukkit.entity.minecart.StorageMinecart;
 import org.bukkit.event.Cancellable;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -22,6 +23,7 @@ import org.bukkit.event.block.BlockShearEntityEvent;
 import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.entity.PlayerLeashEntityEvent;
 import org.bukkit.event.player.*;
+import org.bukkit.inventory.EquipmentSlot;
 import org.jspecify.annotations.NullMarked;
 
 /**
@@ -118,6 +120,38 @@ public final class InteractionListener implements Listener {
             return;
         }
         deny(event, event.getPlayer(), mannequin, Flags.MANNEQUIN_MANIPULATE);
+    }
+
+    /**
+     * Storage carried by an entity: chest and hopper minecarts, chest boats, and a donkey or llama
+     * wearing a chest. None of them is a block, so {@code chest-access} never reached them — a region
+     * that protects every container in it left anything parked inside open to whoever found it.
+     *
+     * <p>Deliberately narrow. Villagers and plain horses are inventory holders too and have their own
+     * flags ({@code villager-trade}, {@code ride}); gating every inventory-holding entity here would
+     * make {@code chest-access} decide who may mount a horse.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onEntityContainer(final PlayerInteractEntityEvent event) {
+        if (event.getHand() != EquipmentSlot.HAND) {
+            return;
+        }
+        final Entity target = event.getRightClicked();
+        if (!(target instanceof StorageMinecart || target instanceof HopperMinecart
+            || target instanceof ChestBoat
+            || target instanceof ChestedHorse horse && horse.isCarryingChest())) {
+            return;
+        }
+        if (EventGate.disabled(event)) {
+            return;
+        }
+        final Player player = event.getPlayer();
+        final ApplicableRegionSet set = query.getApplicableRegions(target);
+        if (set.testBuild(player.getUniqueId(), Flags.CHEST_ACCESS) || Bypass.has(player)) {
+            return;
+        }
+        event.setCancelled(true);
+        messages.sendDeny(player, Flags.CHEST_ACCESS, set.queryValue(Flags.DENY_MESSAGE));
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)

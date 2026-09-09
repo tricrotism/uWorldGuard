@@ -37,6 +37,9 @@ public final class FlagGroupSupport {
         // BuildProtectionListener.onInteract
         Flags.INTERACT,
         Flags.USE,
+        // BuildProtectionListener.checkBucket
+        Flags.BUCKET_FILL,
+        Flags.BUCKET_EMPTY,
         // BuildProtectionListener.onPvp (judged against the attacker)
         Flags.PVP,
         // PlayerStateListener.onChestAccess

@@ -56,7 +56,7 @@ public final class ProtectedPolygonRegion extends ProtectedRegion {
         if (y < minY || y > maxY) {
             return false;
         }
-        // Even-odd ray casting in the X/Z plane.
+        // Even-odd ray casting in the X/Z plane, with the outline itself counted as inside.
         boolean inside = false;
         final int n = pointsX.length;
         for (int i = 0, j = n - 1; i < n; j = i++) {
@@ -64,6 +64,9 @@ public final class ProtectedPolygonRegion extends ProtectedRegion {
             final int zi = pointsZ[i];
             final int xj = pointsX[j];
             final int zj = pointsZ[j];
+            if (onEdge(x, z, xi, zi, xj, zj)) {
+                return true;
+            }
             if ((zi > z) != (zj > z)) {
                 final double crossX = (double) (xj - xi) * (z - zi) / (zj - zi) + xi;
                 if (x < crossX) {
@@ -72,6 +75,25 @@ public final class ProtectedPolygonRegion extends ProtectedRegion {
             }
         }
         return inside;
+    }
+
+    /**
+     * Whether the column at {@code x,z} lies on the segment between two vertices.
+     *
+     * <p>Ray casting alone treats the outline as half-open: it accepts the low-X and low-Z sides of a
+     * footprint and rejects the opposite two, so the whole {@code x == maxX} column and
+     * {@code z == maxZ} row of a polygon region read as wilderness while
+     * {@link #getMaximumPoint()} still reports them as in bounds. WorldGuard counts a point on the
+     * outline as contained, and so does this.
+     */
+    private static boolean onEdge(
+        final int x, final int z, final int xi, final int zi, final int xj, final int zj
+    ) {
+        if (x < Math.min(xi, xj) || x > Math.max(xi, xj)
+            || z < Math.min(zi, zj) || z > Math.max(zi, zj)) {
+            return false;
+        }
+        return (long) (x - xi) * (zj - zi) == (long) (z - zi) * (xj - xi);
     }
 
     @Override

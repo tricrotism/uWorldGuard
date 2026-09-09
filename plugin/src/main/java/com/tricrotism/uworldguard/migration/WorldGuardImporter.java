@@ -106,7 +106,7 @@ public final class WorldGuardImporter {
                 continue;
             }
 
-            final ProtectedRegion region = buildRegion(id, sec);
+            final ProtectedRegion region = buildRegion(id, sec, warnings);
             if (region == null) {
                 skipped++;
                 warnings.add("region '" + id + "': shape type '" + sec.getString("type", "cuboid")
@@ -171,7 +171,9 @@ public final class WorldGuardImporter {
             && existing.getMembers().isEmpty();
     }
 
-    private @Nullable ProtectedRegion buildRegion(final String id, final ConfigurationSection sec) {
+    private @Nullable ProtectedRegion buildRegion(
+        final String id, final ConfigurationSection sec, final List<String> warnings
+    ) {
         final String type = sec.getString("type", "cuboid").toLowerCase(Locale.ROOT);
         switch (type) {
             case "cuboid" -> {
@@ -183,7 +185,7 @@ public final class WorldGuardImporter {
                 return new ProtectedCuboidRegion(id, min, max);
             }
             case "poly2d" -> {
-                final List<BlockVector3> points = readPoints(sec);
+                final List<BlockVector3> points = readPoints(sec, id, warnings);
                 if (points.size() < 3) {
                     return null;
                 }
@@ -206,12 +208,26 @@ public final class WorldGuardImporter {
         return BlockVector3.at(floor(sec.getDouble("x")), floor(sec.getDouble("y")), floor(sec.getDouble("z")));
     }
 
-    private static List<BlockVector3> readPoints(final ConfigurationSection sec) {
+    /**
+     * A point whose coordinates are unreadable is skipped, and skipping one silently would import the
+     * region as a different shape than the source: still a valid polygon, still protecting, just not
+     * the area the operator drew. Everything else the importer drops is reported, so this is too.
+     */
+    private static List<BlockVector3> readPoints(
+        final ConfigurationSection sec, final String id, final List<String> warnings
+    ) {
         final List<BlockVector3> points = new ArrayList<>();
+        int unreadable = 0;
         for (final Map<?, ?> point : sec.getMapList("points")) {
             if (point.get("x") instanceof Number x && point.get("z") instanceof Number z) {
                 points.add(BlockVector3.at(floor(x.doubleValue()), 0, floor(z.doubleValue())));
+            } else {
+                unreadable++;
             }
+        }
+        if (unreadable > 0) {
+            warnings.add("region '" + id + "': " + unreadable + " polygon point(s) could not be read,"
+                + " so the imported shape covers a different area than the original");
         }
         return points;
     }

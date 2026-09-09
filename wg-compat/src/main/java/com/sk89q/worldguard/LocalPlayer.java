@@ -18,12 +18,13 @@ import java.util.UUID;
  * A player as WorldGuard sees one: everything WorldEdit's {@code Player} offers, plus the handful of
  * Bukkit-side accessors WorldGuard's own handlers need, plus region association.
  *
- * <p>uWorldGuard never implements this with a concrete class. Instances come from
- * {@code com.tricrotism.uworldguard.wgcompat.PlayerWrapping}, which builds a
- * {@link java.lang.reflect.Proxy} that forwards WorldEdit's surface to a real WorldEdit
- * {@code Player} and answers the methods below against Bukkit. The proxy also implements
- * {@code com.tricrotism.uworldguard.wgcompat.UuidSubject}, so region queries made with it take the
- * engine's UUID fast path rather than the per-region associable walk.
+ * <p>Instances come from {@code com.tricrotism.uworldguard.wgcompat.PlayerWrapping}. An online
+ * player gets a class extending WorldEdit's {@code BukkitPlayer}, with the methods below answered
+ * against Bukkit. That is the same base WorldGuard's own implementation uses, and what
+ * {@code BukkitAdapter.adapt(Player)} casts to. An offline player, having no WorldEdit player, gets a
+ * {@link java.lang.reflect.Proxy} that answers identity and association and refuses the rest. Both
+ * implement {@code com.tricrotism.uworldguard.wgcompat.UuidSubject}, so region queries made with
+ * them take the engine's UUID fast path rather than the per-region associable walk.
  */
 public interface LocalPlayer extends com.sk89q.worldedit.entity.Player, RegionAssociable {
 

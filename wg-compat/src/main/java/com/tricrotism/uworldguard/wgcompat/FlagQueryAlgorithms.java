@@ -149,11 +149,11 @@ public final class FlagQueryAlgorithms {
         StateFlag.State explicit = null;
         for (int i = 0, n = regions.size(); i < n; i++) {
             final ProtectedRegion region = regions.get(i);
-            if (region.getPriority() != topPriority) {
-                break;
-            }
             if (region.getFlag(Flags.PASSTHROUGH) == StateFlag.State.ALLOW) {
                 continue;
+            }
+            if (region.getPriority() != topPriority) {
+                break;
             }
             if (!appliesTo(region, Flags.BUILD, association)) {
                 continue;

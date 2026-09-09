@@ -44,11 +44,31 @@ public final class RegionManager {
     private static final long CHUNK_HASH_MULTIPLIER = 0x9E3779B97F4A7C15L; // fibonacci hashing
     private volatile AtomicReferenceArray<@Nullable ChunkCandidates> chunkIndex = new AtomicReferenceArray<>(CHUNK_CACHE_SLOTS);
 
+    /**
+     * Add {@code region}, replacing whatever held its id.
+     *
+     * <p>A replacement takes over the old region's place in the tree the same way
+     * {@link #redefineRegion} does. Without that, every child kept pointing at the instance that just
+     * left the map: it is unreachable, never saved, and still supplying the flags its children
+     * inherit, so an import with {@code --overwrite} left the old values in force until a restart.
+     */
     public void addRegion(final ProtectedRegion region) {
+        final ProtectedRegion replaced = regions.put(region.getId().toLowerCase(Locale.ROOT), region);
         if (region instanceof GlobalProtectedRegion g) {
             global = g;
+        } else if (replaced != null && replaced == global) {
+            global = null;
         }
-        regions.put(region.getId().toLowerCase(Locale.ROOT), region);
+        if (replaced != null && replaced != region) {
+            for (final ProtectedRegion r : regions.values()) {
+                if (r != region && r.getParent() == replaced) {
+                    r.setParent(region);
+                }
+            }
+            if (region.getParent() == replaced) {
+                region.setParent(null);
+            }
+        }
         dirty.set(true);
         flagIndexStale = true;
         invalidateChunkIndex();
@@ -74,6 +94,48 @@ public final class RegionManager {
         flagIndexStale = true;
         invalidateChunkIndex();
         return null;
+    }
+
+    /**
+     * Replace the region holding {@code replacement}'s id with {@code replacement}, which inherits
+     * the old region's flags, owners, members, priority and parent, and takes over as the parent of
+     * any region that pointed at the old one. Returns the region that was replaced, or {@code null}
+     * if the id was not in use.
+     *
+     * <p>Backs {@code /uwg redefine}. One swap rather than remove-then-add: bounds are immutable, so
+     * reshaping means a new instance, and a query landing in the gap between a remove and an add
+     * would see the area as unprotected. The state copy runs inside the map's compute, so a second
+     * redefine of the same id cannot interleave with it.
+     */
+    public @Nullable ProtectedRegion redefineRegion(final ProtectedRegion replacement) {
+        final ProtectedRegion[] previous = new ProtectedRegion[1];
+        regions.computeIfPresent(
+            replacement.getId().toLowerCase(Locale.ROOT),
+            (key, existing) -> {
+                previous[0] = existing;
+                replacement.copyStateFrom(existing);
+                return replacement;
+            });
+
+        final ProtectedRegion replaced = previous[0];
+        if (replaced == null) {
+            return null;
+        }
+
+        if (replacement instanceof GlobalProtectedRegion g) {
+            global = g;
+        } else if (replaced == global) {
+            global = null;
+        }
+        for (final ProtectedRegion r : regions.values()) {
+            if (r.getParent() == replaced) {
+                r.setParent(replacement);
+            }
+        }
+        dirty.set(true);
+        flagIndexStale = true;
+        invalidateChunkIndex();
+        return replaced;
     }
 
     public @Nullable ProtectedRegion removeRegion(final String id) {

@@ -242,4 +242,29 @@ public abstract class ProtectedRegion {
     public final Map<Flag<?>, RegionGroup> getFlagGroups() {
         return flagGroupsView;
     }
+
+    /**
+     * Copy everything that is not geometry from {@code other}: flags and their group qualifiers,
+     * owners, members, priority and parent. Backs {@link RegionManager#redefineRegion}, where a
+     * region is reshaped by building a new one of the wanted shape under the same id — bounds are
+     * immutable, so the configuration has to move to the new instance rather than the shape moving
+     * to the old one.
+     */
+    public final void copyStateFrom(final ProtectedRegion other) {
+        flags.putAll(other.flags);
+        flagGroups.putAll(other.flagGroups);
+        copyDomain(other.owners, owners);
+        copyDomain(other.members, members);
+        priority = other.priority;
+        setParent(other.parent);
+    }
+
+    private static void copyDomain(final DefaultDomain from, final DefaultDomain to) {
+        for (final UUID uuid : from.getPlayers()) {
+            to.addPlayer(uuid);
+        }
+        for (final String group : from.getGroups()) {
+            to.addGroup(group);
+        }
+    }
 }

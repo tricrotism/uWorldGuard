@@ -27,8 +27,15 @@ public final class PotionEffectSetFlag extends Flag<Set<PotionEffect>> {
 
     @Override
     public @Nullable Set<PotionEffect> parse(final String input) {
+        return read(input.split(","), new ArrayList<>(0));
+    }
+
+    /**
+     * @param unreadable collects the tokens naming no known effect, for the caller to report
+     */
+    private static @Nullable Set<PotionEffect> read(final String[] tokens, final List<String> unreadable) {
         final Set<PotionEffect> effects = new LinkedHashSet<>();
-        for (final String raw : input.split(",")) {
+        for (final String raw : tokens) {
             final String token = raw.trim();
             if (token.isEmpty()) {
                 continue;
@@ -36,6 +43,7 @@ public final class PotionEffectSetFlag extends Flag<Set<PotionEffect>> {
             final int colon = token.indexOf(':');
             final PotionEffectType type = effectType(colon < 0 ? token : token.substring(0, colon).trim());
             if (type == null) {
+                unreadable.add(token);
                 continue;
             }
             int amplifier = 0;
@@ -56,14 +64,15 @@ public final class PotionEffectSetFlag extends Flag<Set<PotionEffect>> {
         if (!(stored instanceof Collection<?> list)) {
             return parse(String.valueOf(stored));
         }
-        final StringBuilder joined = new StringBuilder();
+        final String[] tokens = new String[list.size()];
+        int i = 0;
         for (final Object element : list) {
-            if (!joined.isEmpty()) {
-                joined.append(',');
-            }
-            joined.append(element);
+            tokens[i++] = String.valueOf(element);
         }
-        return parse(joined.toString());
+        final List<String> unreadable = new ArrayList<>(0);
+        final Set<PotionEffect> effects = read(tokens, unreadable);
+        DroppedValues.report(getName(), unreadable);
+        return effects;
     }
 
     @Override

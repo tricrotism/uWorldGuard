@@ -75,21 +75,29 @@ public class DefaultDomain implements Domain, ChangeTracked {
     /**
      * Replaces the players in this domain with those of {@code playerDomain}. The engine domain
      * object itself is never swapped.
+     *
+     * <p>The incoming ids are copied before this domain is cleared. WorldGuard swaps a reference
+     * here, so handing back the domain's own {@code PlayerDomain} costs nothing there, and that is
+     * the natural way to write back after editing one. Reading the live view after clearing it made
+     * that same call empty the region's owners instead.
      */
     public void setPlayerDomain(final PlayerDomain playerDomain) {
+        final Set<UUID> incoming = Set.copyOf(playerDomain.getUniqueIds());
         this.playerDomain.clear();
-        for (final UUID uniqueId : playerDomain.getUniqueIds()) {
+        for (final UUID uniqueId : incoming) {
             backing.addPlayer(uniqueId);
         }
         changed();
     }
 
     /**
-     * Replaces the groups in this domain with those of {@code groupDomain}.
+     * Replaces the groups in this domain with those of {@code groupDomain}. Copied first, for the
+     * reason {@link #setPlayerDomain} gives.
      */
     public void setGroupDomain(final GroupDomain groupDomain) {
+        final Set<String> incoming = Set.copyOf(groupDomain.getGroups());
         this.groupDomain.clear();
-        for (final String group : groupDomain.getGroups()) {
+        for (final String group : incoming) {
             backing.addGroup(group);
         }
         changed();

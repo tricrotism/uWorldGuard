@@ -9,6 +9,9 @@ import com.tricrotism.uworldguard.region.RegionQuery;
 import com.tricrotism.uworldguard.text.MessageService;
 import io.papermc.paper.event.block.VaultChangeStateEvent;
 import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.block.Block;
+import org.bukkit.block.data.Directional;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -60,12 +63,15 @@ public final class MachineListener implements Listener {
      * server where no region sets the flag this handler is a bitset test per world and nothing else:
      * no allocation, no region resolved.
      *
-     * <p>{@code EventGate} is not consulted because {@code InventoryMoveItemEvent} extends
-     * {@link org.bukkit.event.Event} directly, so the gate cannot resolve a world for it anyway.
+     * <p>The registry test comes before {@code EventGate} rather than after it, reversing the order
+     * every other handler uses. The gate resolves this event's world through the destination
+     * inventory's location, which builds one, and this is the hottest event uWorldGuard listens to.
+     * So the bitset test that answers "no region anywhere uses this flag" goes first, and the common
+     * case never gets that far.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onHopperTransfer(final InventoryMoveItemEvent event) {
-        if (!container.anyRegionUses(Flags.HOPPER_TRANSFER)) {
+        if (!container.anyRegionUses(Flags.HOPPER_TRANSFER) || EventGate.disabled(event)) {
             return;
         }
         final Location destination = event.getDestination().getLocation();
@@ -78,14 +84,35 @@ public final class MachineListener implements Listener {
         }
     }
 
+    /**
+     * A dispenser answers for where it stands, and — when what it dispenses becomes a block — for
+     * where that block lands. A dispenser one block outside a region and aimed into it fills the
+     * region with water or lava without a {@code BlockPlaceEvent} of anyone's, so the target is
+     * tested too. Only the three fluid buckets get that far: everything else either leaves the world
+     * alone or arrives through an event of its own (a fire charge as {@code BlockIgniteEvent}).
+     */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDispense(final BlockDispenseEvent event) {
         if (EventGate.disabled(event)) {
             return;
         }
-        if (!query.testState(event.getBlock(), Flags.DISPENSE)) {
+        final Block block = event.getBlock();
+        if (!query.testState(block, Flags.DISPENSE)) {
+            event.setCancelled(true);
+            return;
+        }
+        if (!isFluidBucket(event.getItem().getType())) {
+            return;
+        }
+        if (block.getBlockData() instanceof Directional directional
+            && !query.testState(block.getRelative(directional.getFacing()), Flags.BLOCK_PLACE)) {
             event.setCancelled(true);
         }
+    }
+
+    private static boolean isFluidBucket(final Material item) {
+        return item == Material.WATER_BUCKET || item == Material.LAVA_BUCKET
+            || item == Material.POWDER_SNOW_BUCKET;
     }
 
     /**

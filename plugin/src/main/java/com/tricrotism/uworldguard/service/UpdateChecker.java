@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.service;
 
+import com.tricrotism.uworldguard.integration.ReportedVersion;
 import org.bukkit.plugin.Plugin;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
@@ -55,7 +56,7 @@ public final class UpdateChecker {
     }
 
     private void run() {
-        final String current = plugin.getPluginMeta().getVersion();
+        final String current = ReportedVersion.real(plugin);
         final String body = fetch();
         if (body == null) {
             return;
@@ -152,7 +153,7 @@ public final class UpdateChecker {
         try (HttpClient client = HttpClient.newBuilder().connectTimeout(TIMEOUT).build()) {
             final HttpRequest request = HttpRequest.newBuilder(URI.create(RELEASES_URL))
                 .header("Accept", "application/vnd.github+json")
-                .header("User-Agent", plugin.getName() + "/" + plugin.getPluginMeta().getVersion())
+                    .header("User-Agent", plugin.getName() + "/" + ReportedVersion.real(plugin))
                 .timeout(TIMEOUT)
                 .GET()
                 .build();

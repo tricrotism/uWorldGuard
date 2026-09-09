@@ -50,6 +50,19 @@ public final class FlagMenu {
         openLanding(player);
     }
 
+    /**
+     * Whether the region this menu edits has left the manager since it was opened. Writes to a
+     * removed region land on an object nothing saves or consults, so the operator sees the flag take
+     * and it does nothing; a chat prompt makes that window as long as they take to type.
+     */
+    private boolean gone(final Player player) {
+        if (manager.getRegion(region.getId()) == region) {
+            return false;
+        }
+        player.sendMessage(Messages.format("<red>That region no longer exists."));
+        return true;
+    }
+
     private void openLanding(final Player player) {
         final PagedGui<Item> gui = PagedGui.itemsBuilder()
             .setStructure(
@@ -302,6 +315,9 @@ public final class FlagMenu {
     }
 
     private void onClick(final Flag<?> flag, final Player player, final ClickType clickType, final Item item) {
+        if (MenuItems.denied(player, MenuItems.FLAG) || gone(player)) {
+            return;
+        }
         if (clickType.isRightClick()) {
             region.setFlag(flag, null);
             manager.markDirty();
@@ -344,6 +360,9 @@ public final class FlagMenu {
         player.sendMessage(Messages.format(
             "<gray>Type a new value for <aqua>" + flag.getName() + "</aqua> in chat, or <red>cancel</red>."));
         chatInput.await(player.getUniqueId(), value -> {
+            if (gone(player)) {
+                return;
+            }
             if (applyValue(region, flag, value, player)) {
                 manager.markDirty();
             } else {

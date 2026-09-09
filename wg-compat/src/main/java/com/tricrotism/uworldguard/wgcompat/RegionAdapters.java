@@ -50,10 +50,12 @@ public final class RegionAdapters {
         }
         CompatDiagnostics.WRAPS.increment();
         final ProtectedRegion shim = create(backing);
+        final ProtectedRegion canonical = REGIONS.getIfPresent(backing);
+        final ProtectedRegion result = canonical != null ? canonical : shim;
         if (manager != null) {
-            shim.uwgAttach(manager);
+            result.uwgAttach(manager);
         }
-        return shim;
+        return result;
     }
 
     /**
@@ -72,7 +74,7 @@ public final class RegionAdapters {
     public static void link(
         final com.tricrotism.uworldguard.region.ProtectedRegion backing, final ProtectedRegion shim
     ) {
-        REGIONS.put(backing, shim);
+        REGIONS.asMap().putIfAbsent(backing, shim);
     }
 
     private static ProtectedRegion create(final com.tricrotism.uworldguard.region.ProtectedRegion backing) {

@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.config;
 
+import com.tricrotism.uworldguard.util.VerboseLogging;
 import org.bukkit.Material;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.jspecify.annotations.NullMarked;
@@ -35,6 +36,7 @@ public final class Settings {
     private int movementTaskTicks = 4;
 
     private boolean updateCheck = true;
+    private boolean verboseLogging = false;
 
     private boolean sqlEnabled = false;
     private String sqlUrl = "jdbc:sqlite:plugins/uWorldGuard/regions.db";
@@ -61,10 +63,17 @@ public final class Settings {
 
         updateCheck = config.getBoolean("updates.check", updateCheck);
 
+        verboseLogging = config.getBoolean("logging.verbose", verboseLogging);
+        VerboseLogging.set(verboseLogging);
+
         sqlEnabled = config.getBoolean("storage.sql.enabled", sqlEnabled);
         sqlUrl = config.getString("storage.sql.url", sqlUrl);
         sqlUser = config.getString("storage.sql.user", sqlUser);
         sqlPassword = config.getString("storage.sql.password", sqlPassword);
+    }
+
+    public boolean verboseLogging() {
+        return verboseLogging;
     }
 
     public boolean updateCheck() {

@@ -13,10 +13,13 @@ import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import com.sk89q.worldguard.protection.regions.RegionQuery;
 import com.sk89q.worldguard.session.handler.Handler;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * One player's live session state and the handlers attached to it.
@@ -27,8 +30,14 @@ import java.util.Set;
  */
 public class Session {
 
+    /**
+     * Handler classes already reported as throwing, so one broken handler logs once rather than on
+     * every movement. Bounded by the number of handler classes registered on the server.
+     */
+    private static final Set<Class<?>> REPORTED = ConcurrentHashMap.newKeySet();
+
     private final SessionManager manager;
-    private final List<Handler> handlers = new ArrayList<>(4);
+    private final List<Handler> handlers = new CopyOnWriteArrayList<>();
 
     private volatile boolean bypassDisabled;
 
@@ -67,7 +76,12 @@ public class Session {
         final Location location = player.getLocation();
         final ApplicableRegionSet set = regionsAt(location);
         for (int i = 0, n = handlers.size(); i < n; i++) {
-            handlers.get(i).initialize(player, location, set);
+            final Handler handler = handlers.get(i);
+            try {
+                handler.initialize(player, location, set);
+            } catch (final RuntimeException | LinkageError e) {
+                threw(handler, "initialize", e);
+            }
         }
     }
 
@@ -75,7 +89,12 @@ public class Session {
         final Location location = player.getLocation();
         final ApplicableRegionSet set = regionsAt(location);
         for (int i = 0, n = handlers.size(); i < n; i++) {
-            handlers.get(i).uninitialize(player, location, set);
+            final Handler handler = handlers.get(i);
+            try {
+                handler.uninitialize(player, location, set);
+            } catch (final RuntimeException | LinkageError e) {
+                threw(handler, "uninitialize", e);
+            }
         }
     }
 
@@ -87,14 +106,26 @@ public class Session {
     public void tick(final LocalPlayer player) {
         final ApplicableRegionSet set = regionsAt(player.getLocation());
         for (int i = 0, n = handlers.size(); i < n; i++) {
-            handlers.get(i).tick(player, set);
+            final Handler handler = handlers.get(i);
+            try {
+                handler.tick(player, set);
+            } catch (final RuntimeException | LinkageError e) {
+                threw(handler, "tick", e);
+            }
         }
         com.tricrotism.uworldguard.wgcompat.CompatDiagnostics.SESSION_DISPATCHES.increment();
     }
 
     public boolean isInvincible(final LocalPlayer player) {
         for (int i = 0, n = handlers.size(); i < n; i++) {
-            final StateFlag.State state = handlers.get(i).getInvincibility(player);
+            final Handler handler = handlers.get(i);
+            final StateFlag.State state;
+            try {
+                state = handler.getInvincibility(player);
+            } catch (final RuntimeException | LinkageError e) {
+                threw(handler, "getInvincibility", e);
+                continue;
+            }
             if (state != null) {
                 return state == StateFlag.State.ALLOW;
             }
@@ -138,7 +169,15 @@ public class Session {
         final boolean cancellable = moveType.isCancellable();
         final ApplicableRegionSet toSet = regionsAt(to);
         for (int i = 0, n = handlers.size(); i < n; i++) {
-            if (!handlers.get(i).testMoveTo(player, from, to, toSet, moveType) && cancellable) {
+            final Handler handler = handlers.get(i);
+            final boolean allowed;
+            try {
+                allowed = handler.testMoveTo(player, from, to, toSet, moveType);
+            } catch (final RuntimeException | LinkageError e) {
+                threw(handler, "testMoveTo", e);
+                continue;
+            }
+            if (!allowed && cancellable) {
                 return from;
             }
         }
@@ -154,8 +193,15 @@ public class Session {
             final Set<ProtectedRegion> entered = difference(toRegions, fromRegions);
             final Set<ProtectedRegion> exited = difference(fromRegions, toRegions);
             for (int i = 0, n = handlers.size(); i < n; i++) {
-                if (!handlers.get(i).onCrossBoundary(player, from, to, toSet, entered, exited, moveType)
-                    && cancellable) {
+                final Handler handler = handlers.get(i);
+                final boolean allowed;
+                try {
+                    allowed = handler.onCrossBoundary(player, from, to, toSet, entered, exited, moveType);
+                } catch (final RuntimeException | LinkageError e) {
+                    threw(handler, "onCrossBoundary", e);
+                    continue;
+                }
+                if (!allowed && cancellable) {
                     return from;
                 }
             }
@@ -163,6 +209,24 @@ public class Session {
 
         com.tricrotism.uworldguard.wgcompat.CompatDiagnostics.SESSION_DISPATCHES.increment();
         return null;
+    }
+
+    /**
+     * Records a handler that threw and carries on without it, once per handler class.
+     *
+     * <p>These handlers belong to other plugins, and they run inside uWorldGuard's own movement and
+     * tick paths. One of them throwing used to take the rest of the pass with it: the tick stopped
+     * before uWorldGuard applied heal, feed and the time and weather locks, and on the polled path
+     * the tracker never recorded the position it had just moved to, so the same crossing was
+     * processed again on every poll. A thrower is treated as raising no objection.
+     */
+    private static void threw(final Handler handler, final String stage, final Throwable error) {
+        final Class<?> type = handler.getClass();
+        if (REPORTED.add(type)) {
+            Logger.getLogger("uWorldGuard").log(Level.WARNING, "[wg-compat] Session handler "
+                + type.getName() + " threw from " + stage + "; continuing without it. This is a bug"
+                + " in the plugin that registered the handler, not in uWorldGuard.", error);
+        }
     }
 
     private static Set<ProtectedRegion> setOf(final ApplicableRegionSet set) {

@@ -212,18 +212,37 @@ public final class WrappedRegionSet implements ApplicableRegionSet {
         return fallback == null ? null : queryValue(subject, fallback);
     }
 
+    /**
+     * Resolves a state flag the way WorldGuard's own query does: what some region actually set, and
+     * the <em>shim</em> flag's default when nothing did.
+     *
+     * <p>The two defaults are not the same value. The engine's is never null, so asking it to resolve
+     * an unset flag answered {@code DENY} where WorldGuard answers {@code null} — and a consumer's
+     * "null means WorldGuard has no opinion, apply my own rule" branch never ran again. The other way
+     * round, a flag a consumer registered is not an engine state flag at all, so it fell through to
+     * the value path, which never applies a default: a plugin registering
+     * {@code new StateFlag("theirs", true)} read {@code null} everywhere and switched itself off.
+     */
     private StateFlag.State engineState(final StateFlag flag, final UUID subject) {
         final com.tricrotism.uworldguard.flags.Flag<Object> engine = FlagBridge.engineFlag(flag);
         if (engine == null) {
             return flag.getDefault();
         }
+        // Via a wildcard: Flag<Object> and the engine's Flag<State> are provably distinct types, so
+        // instanceof against the declared type does not compile.
         final com.tricrotism.uworldguard.flags.Flag<?> raw = engine;
         if (raw instanceof com.tricrotism.uworldguard.flags.StateFlag stateFlag) {
-            return backing.queryState(stateFlag, subject) == com.tricrotism.uworldguard.flags.State.ALLOW
+            final com.tricrotism.uworldguard.flags.State explicit =
+                backing.queryExplicitState(stateFlag, subject);
+            if (explicit == null) {
+                return flag.getDefault();
+            }
+            return explicit == com.tricrotism.uworldguard.flags.State.ALLOW
                 ? StateFlag.State.ALLOW
                 : StateFlag.State.DENY;
         }
-        return (StateFlag.State) FlagBridge.toShimValue(flag, backing.queryValue(engine));
+        final StateFlag.State value = (StateFlag.State) FlagBridge.toShimValue(flag, backing.queryValue(engine));
+        return value != null ? value : flag.getDefault();
     }
 
     private List<ProtectedRegion> regionList() {

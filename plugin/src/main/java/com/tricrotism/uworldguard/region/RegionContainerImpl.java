@@ -1,6 +1,7 @@
 package com.tricrotism.uworldguard.region;
 
 import com.tricrotism.uworldguard.storage.RegionStore;
+import com.tricrotism.uworldguard.util.VerboseLogging;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
@@ -35,6 +36,13 @@ public final class RegionContainerImpl implements RegionContainer {
     private final RegionStore store;
     private final Map<UUID, Loaded> loaded = new ConcurrentHashMap<>();
     private final Set<String> failedLoads = ConcurrentHashMap.newKeySet();
+    /**
+     * Worlds whose async populate is still in flight. The publish at the end of {@link #load} claims
+     * its entry, so a world unloaded while its regions were being read is never published: without
+     * it {@link #unload} had nothing to remove yet and the task afterwards put a manager for a world
+     * that is gone into the map, where it stayed for the session.
+     */
+    private final Set<UUID> loading = ConcurrentHashMap.newKeySet();
     /**
      * One monitor per world, held across its {@link RegionStore#save} call. Three writers can reach
      * the same world's document — the autosave, the shutdown save, and a world unload — and the YAML
@@ -93,6 +101,7 @@ public final class RegionContainerImpl implements RegionContainer {
         final RegionManager manager = new RegionManager();
         final String name = world.getName();
         final UUID uid = world.getUID();
+        loading.add(uid);
         plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
             try {
                 store.load(name, manager);
@@ -106,6 +115,9 @@ public final class RegionContainerImpl implements RegionContainer {
                 manager.addRegion(new GlobalProtectedRegion());
             }
             manager.clearDirty();
+            if (!loading.remove(uid)) {
+                return;
+            }
             loaded.put(uid, new Loaded(name, manager));
             warnAboutUnenforcedGroups(name, manager);
         });
@@ -142,7 +154,7 @@ public final class RegionContainerImpl implements RegionContainer {
         }
 
         final List<String> passthrough = FlagGroupSupport.passthroughRegions(manager);
-        if (!passthrough.isEmpty()) {
+        if (VerboseLogging.enabled() && !passthrough.isEmpty()) {
             plugin.getLogger().info("World '" + world + "': " + passthrough.size()
                 + " region(s) allow passthrough and so do not protect against building: "
                 + String.join(", ", passthrough));
@@ -150,6 +162,7 @@ public final class RegionContainerImpl implements RegionContainer {
     }
 
     public void unload(final World world) {
+        loading.remove(world.getUID());
         final Loaded removed = loaded.remove(world.getUID());
         if (removed != null) {
             saveAsync(removed.name(), removed.manager(), () -> {});
