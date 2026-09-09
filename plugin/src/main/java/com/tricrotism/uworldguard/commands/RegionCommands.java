@@ -130,6 +130,12 @@ public final class RegionCommands {
     private static final List<String> STARTERS = List.of("/uwg define <id>", "/uwg here", "/uwg menu");
 
     /**
+     * Marks a member or owner argument as a permission group rather than a player, matching what
+     * WorldGuard accepts: {@code /uwg addmember spawn g:staff}.
+     */
+    private static final String GROUP_PREFIX = "g:";
+
+    /**
      * The landing page: three commands to start with, then one clickable row per section. Printing
      * every command at once put two dozen lines of syntax on screen before a player knew which of
      * them they wanted, and the useful ones scrolled away with the rest.
@@ -684,9 +690,9 @@ public final class RegionCommands {
                 : CommandText.runnable(Component.text(parent.getId(), CommandText.REGION),
                 "/uwg info " + parent.getId(), "Click for details about " + parent.getId())))
             .append(Component.newline())
-            .append(CommandText.field("Owners", String.valueOf(region.getOwners().size())))
+            .append(CommandText.field("Owners", trusted(region.getOwners())))
             .append(Component.newline())
-            .append(CommandText.field("Members", String.valueOf(region.getMembers().size())));
+            .append(CommandText.field("Members", trusted(region.getMembers())));
 
         card = card.append(Component.newline()).append(CommandText.field("Flags",
             CommandText.runnable(
@@ -988,6 +994,11 @@ public final class RegionCommands {
             return;
         }
 
+        if (playerName.regionMatches(true, 0, GROUP_PREFIX, 0, GROUP_PREFIX.length())) {
+            group(sender, regionManager, region, playerName.substring(GROUP_PREFIX.length()), owner, add);
+            return;
+        }
+
         plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
             final OfflinePlayer target = Bukkit.getOfflinePlayer(playerName);
             if (add && !target.isOnline() && !target.hasPlayedBefore()) {
@@ -1014,6 +1025,50 @@ public final class RegionCommands {
                 Placeholder.unparsed("player", playerName),
                 Placeholder.unparsed("id", id));
         });
+    }
+
+    /**
+     * A domain as one line: how many players it trusts, and which groups by name.
+     *
+     * <p>The count alone cannot be audited. A group is the one kind of trust an operator cannot
+     * discover by looking at who is online, so setting {@code g:staff} and then having no way to see
+     * it leaves them guessing whether it took. Player uuids stay a count — naming them means a disk
+     * read each.
+     */
+    private static String trusted(final DefaultDomain domain) {
+        final Set<String> groups = domain.getGroups();
+        if (groups.isEmpty()) {
+            return String.valueOf(domain.size());
+        }
+        return domain.getPlayers().size() + " + groups: " + String.join(", ", groups);
+    }
+
+    /**
+     * The {@code g:staff} half of the member commands: trust everyone holding {@code group.staff}
+     * rather than one uuid. Nothing to resolve, so this stays on the calling thread instead of taking
+     * the offline-player detour the uuid path needs.
+     */
+    private void group(
+        final Source sender, final RegionManager regionManager, final ProtectedRegion region,
+        final String name, final boolean owner, final boolean add
+    ) {
+        if (name.isBlank()) {
+            error(sender, "Name a group after <aqua>g:</aqua>, for example <aqua>g:staff</aqua>.");
+            return;
+        }
+
+        final DefaultDomain domain = owner ? region.getOwners() : region.getMembers();
+        if (add) {
+            domain.addGroup(name);
+        } else {
+            domain.removeGroup(name);
+        }
+
+        regionManager.markDirty();
+        success(sender, (add ? "Added everyone in <aqua><group></aqua> to " : "Removed <aqua><group></aqua> from ")
+                + (owner ? "owners" : "members") + " of <aqua><id></aqua>.",
+            Placeholder.unparsed("group", name),
+            Placeholder.unparsed("id", region.getId()));
     }
 
     /**

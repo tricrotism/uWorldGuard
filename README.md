@@ -10,7 +10,7 @@ people who do.
 
 |               |                          |
 |---------------|--------------------------|
-| **Minecraft** | 26.2                     |
+| **Minecraft** | 1.21.11                  |
 | **Server**    | Paper (Folia-compatible) |
 | **Java**      | 25 or newer              |
 | **Version**   | 1.0.5                    |
@@ -47,6 +47,16 @@ Now nobody but you can build there. To let a friend build too:
 ```
 /wg addmember spawn Steve
 ```
+
+To trust a whole permission group instead of one player, prefix it with `g:`:
+
+```
+/wg addmember spawn g:staff
+```
+
+That trusts anyone holding the `group.staff` permission, which is what Vault-backed permissions
+plugins grant every member of a group. It only matches players who are online, since an offline
+player has no permissions to check.
 
 To change what's allowed, open the menu instead of memorising flag names:
 

@@ -200,9 +200,14 @@ public class DefaultDomain implements Domain, ChangeTracked {
         return backing.containsPlayer(uniqueId);
     }
 
+    /**
+     * The one membership test that can answer for groups, because it is the one holding a player to
+     * ask. {@link #contains(UUID)} and the name form cannot: a uuid has no permissions attached to
+     * it, so both stay player-only, as they are in WorldGuard.
+     */
     @Override
     public boolean contains(final com.sk89q.worldguard.LocalPlayer player) {
-        return backing.containsPlayer(player.getUniqueId());
+        return playerDomain.contains(player) || groupDomain.contains(player);
     }
 
     public void addPlayer(final com.sk89q.worldguard.LocalPlayer player) {

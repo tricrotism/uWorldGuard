@@ -5,6 +5,8 @@ import com.tricrotism.uworldguard.domain.DefaultDomain;
 import com.tricrotism.uworldguard.flags.Flag;
 import com.tricrotism.uworldguard.flags.RegionGroup;
 import com.tricrotism.uworldguard.util.BlockVector3;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
@@ -143,23 +145,50 @@ public abstract class ProtectedRegion {
     }
 
     /**
-     * True if the player owns this region or any parent.
+     * True if the player owns this region or any parent, by uuid or by a trusted group.
      */
     public final boolean isOwner(final UUID uuid) {
+        boolean groups = false;
         for (@Nullable ProtectedRegion r = this; r != null; r = r.parent) {
             if (r.owners.containsPlayer(uuid)) {
                 return true;
             }
+            groups |= r.owners.hasGroups();
         }
-        return false;
+        return groups && trustedByGroup(uuid, false);
     }
 
     /**
-     * True if the player owns or is a member of this region or any parent.
+     * True if the player owns or is a member of this region or any parent, by uuid or by a trusted
+     * group.
      */
     public final boolean isMember(final UUID uuid) {
+        boolean groups = false;
         for (@Nullable ProtectedRegion r = this; r != null; r = r.parent) {
             if (r.owners.containsPlayer(uuid) || r.members.containsPlayer(uuid)) {
+                return true;
+            }
+            groups |= r.owners.hasGroups() || r.members.hasGroups();
+        }
+        return groups && trustedByGroup(uuid, true);
+    }
+
+    /**
+     * The group half of the membership tests, kept out of line because it is the rare half: it runs
+     * only once the uuid walk has missed and some region in the chain actually trusts a group, so a
+     * region that trusts nobody by group never resolves a player or touches a permission map. The
+     * uuid walk stays first because it answers without leaving the region.
+     *
+     * <p>Resolving the player is what makes group trust an online-only answer, and the null is the
+     * honest result rather than a failure: an offline uuid has no permissions to read.
+     */
+    private boolean trustedByGroup(final UUID uuid, final boolean includeMembers) {
+        final Player player = Bukkit.getPlayer(uuid);
+        if (player == null) {
+            return false;
+        }
+        for (@Nullable ProtectedRegion r = this; r != null; r = r.parent) {
+            if (r.owners.grants(player) || (includeMembers && r.members.grants(player))) {
                 return true;
             }
         }

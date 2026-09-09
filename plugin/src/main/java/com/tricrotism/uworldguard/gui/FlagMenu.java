@@ -11,11 +11,11 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.ClickType;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
-import xyz.xenondevs.invui.gui.Markers;
 import xyz.xenondevs.invui.gui.PagedGui;
+import xyz.xenondevs.invui.gui.structure.Markers;
 import xyz.xenondevs.invui.item.Item;
-import xyz.xenondevs.invui.item.ItemBuilder;
 import xyz.xenondevs.invui.item.ItemProvider;
+import xyz.xenondevs.invui.item.builder.ItemBuilder;
 import xyz.xenondevs.invui.window.Window;
 
 import java.util.ArrayList;
@@ -64,7 +64,7 @@ public final class FlagMenu {
     }
 
     private void openLanding(final Player player) {
-        final PagedGui<Item> gui = PagedGui.itemsBuilder()
+        final PagedGui<Item> gui = PagedGui.items()
             .setStructure(
                 "x x x x x x x x x",
                 "x x x x x x x x x",
@@ -88,17 +88,15 @@ public final class FlagMenu {
         final List<Item> items = new ArrayList<>(categories.length);
         for (final FlagCategory category : categories) {
             final int index = category.ordinal();
-            items.add(Item.builder()
-                .setItemProvider(new ItemBuilder(iconFor(category))
-                    .setName(cards.names()[index])
-                    .addLoreLines(
-                        cards.counts()[index],
-                        Messages.format("<!i><dark_gray>Click to view")))
-                .addClickHandler((item, click) -> openList(click.player(),
-                    Messages.format("<dark_gray><name>",
-                        Placeholder.unparsed("name", category.getDisplayName())),
-                    flag -> flag.getCategory() == category))
-                .build());
+            final ItemProvider provider = new ItemBuilder(iconFor(category))
+                .setDisplayName(MenuItems.wrap(cards.names()[index]))
+                .addLoreLines(
+                    MenuItems.wrap(cards.counts()[index]),
+                    MenuItems.wrap(Messages.format("<!i><dark_gray>Click to view")));
+            items.add(MenuItems.clickable(() -> provider, (item, click) -> openList(click.getPlayer(),
+                Messages.format("<dark_gray><name>",
+                    Placeholder.unparsed("name", category.getDisplayName())),
+                flag -> flag.getCategory() == category)));
         }
         return items;
     }
@@ -142,28 +140,25 @@ public final class FlagMenu {
     }
 
     private Item activeButton() {
-        return Item.builder()
-            .setItemProvider(_ -> new ItemBuilder(Material.NETHER_STAR)
-                .setName(Messages.format("<!i><yellow>Active flags"))
+        return MenuItems.clickable(
+            () -> new ItemBuilder(Material.NETHER_STAR)
+                .setDisplayName(MenuItems.wrap(Messages.format("<!i><yellow>Active flags")))
                 .addLoreLines(
-                    Messages.format("<!i><gray><white><count></white> set on this region",
-                        Placeholder.unparsed("count", Integer.toString(region.getFlags().size()))),
-                    Messages.format("<!i><dark_gray>Click to view only the flags you've set")))
-            .addClickHandler((item, click) -> openList(click.player(),
+                    MenuItems.wrap(Messages.format("<!i><gray><white><count></white> set on this region",
+                        Placeholder.unparsed("count", Integer.toString(region.getFlags().size())))),
+                    MenuItems.wrap(Messages.format("<!i><dark_gray>Click to view only the flags you've set"))),
+            (item, click) -> openList(click.getPlayer(),
                 Messages.format("<dark_gray>Active flags"),
-                flag -> region.getFlags().get(flag) != null))
-            .build();
+                flag -> region.getFlags().get(flag) != null));
     }
 
     private Item searchButton() {
-        return Item.builder()
-            .setItemProvider(_ -> new ItemBuilder(Material.OAK_SIGN)
-                .setName(Messages.format("<!i><yellow>Search"))
-                .addLoreLines(
-                    Messages.format("<!i><gray>Find a flag by name across all categories"),
-                    Messages.format("<!i><dark_gray>Click, then type a query")))
-            .addClickHandler((_, click) -> promptSearch(click.player()))
-            .build();
+        final ItemProvider provider = new ItemBuilder(Material.OAK_SIGN)
+            .setDisplayName(MenuItems.wrap(Messages.format("<!i><yellow>Search")))
+            .addLoreLines(
+                MenuItems.wrap(Messages.format("<!i><gray>Find a flag by name across all categories")),
+                MenuItems.wrap(Messages.format("<!i><dark_gray>Click, then type a query")));
+        return MenuItems.clickable(() -> provider, (item, click) -> promptSearch(click.getPlayer()));
     }
 
     private void promptSearch(final Player player) {
@@ -181,7 +176,7 @@ public final class FlagMenu {
     }
 
     private void openList(final Player player, final Component title, final Predicate<Flag<?>> filter) {
-        final PagedGui<Item> gui = PagedGui.itemsBuilder()
+        final PagedGui<Item> gui = PagedGui.items()
             .setStructure(
                 "x x x x x x x x x",
                 "x x x x x x x x x",
@@ -200,10 +195,9 @@ public final class FlagMenu {
     }
 
     private Item backButton() {
-        return Item.builder()
-            .setItemProvider(new ItemBuilder(Material.OAK_DOOR).setName(Messages.format("<!i><yellow>Back")))
-            .addClickHandler((_, click) -> openLanding(click.player()))
-            .build();
+        final ItemProvider provider = new ItemBuilder(Material.OAK_DOOR)
+            .setDisplayName(MenuItems.wrap(Messages.format("<!i><yellow>Back")));
+        return MenuItems.clickable(() -> provider, (item, click) -> openLanding(click.getPlayer()));
     }
 
     /**
@@ -220,19 +214,18 @@ public final class FlagMenu {
                 Placeholder.unparsed("flag", flag.getName()));
             final Component accepts = Messages.format("<!i><gray>Accepts: <white><hint>",
                 Placeholder.unparsed("hint", typeHint(flag)));
-            items.add(Item.builder()
-                .setItemProvider(_ -> provider(flag, name, accepts))
-                .addClickHandler((item, click) -> onClick(flag, click.player(), click.clickType(), item))
-                .build());
+            items.add(MenuItems.clickable(
+                () -> provider(flag, name, accepts),
+                (item, click) -> onClick(flag, click.getPlayer(), click.getClickType(), item)));
         }
         return items;
     }
 
     private void window(final Player player, final Component title, final PagedGui<Item> gui) {
-        Window.builder()
+        Window.single()
             .setViewer(player)
-            .setTitle(title)
-            .setUpperGui(gui)
+            .setTitle(MenuItems.wrap(title))
+            .setGui(gui)
             .build()
             .open();
     }
@@ -242,18 +235,18 @@ public final class FlagMenu {
         final boolean toggle = flag instanceof StateFlag || flag instanceof BooleanFlag;
         final RegionGroup group = region.getFlagGroup(flag);
         return new ItemBuilder(materialFor(value))
-            .setName(name)
+            .setDisplayName(MenuItems.wrap(name))
             .addLoreLines(
-                valueLine(value),
-                group == RegionGroup.ALL
+                MenuItems.wrap(valueLine(value)),
+                MenuItems.wrap(group == RegionGroup.ALL
                     ? accepts
                     : Messages.format("<!i><gray>Applies to: <gold><group>",
-                    Placeholder.unparsed("group", group.serialized())),
-                Component.empty(),
-                Messages.format(toggle
+                    Placeholder.unparsed("group", group.serialized()))),
+                MenuItems.wrap(Component.empty()),
+                MenuItems.wrap(Messages.format(toggle
                     ? "<!i><dark_gray>Left-click <gray>cycle allow / deny / unset"
-                    : "<!i><dark_gray>Left-click <gray>type a new value in chat"),
-                Messages.format("<!i><dark_gray>Right-click <gray>clear back to default"));
+                    : "<!i><dark_gray>Left-click <gray>type a new value in chat")),
+                MenuItems.wrap(Messages.format("<!i><dark_gray>Right-click <gray>clear back to default")));
     }
 
     /**

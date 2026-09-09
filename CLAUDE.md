@@ -1,6 +1,6 @@
 # uWorldGuard Dev Guide
 
-Paper plugin. Java 25, Paper API 26.2, `paper-plugin.yml` + `PluginLoader`.
+Paper plugin. Java 25, Paper API 1.21.11, `paper-plugin.yml` + `PluginLoader`.
 **Folia-compatible and thread-safe by default. Performance comes first, always.**
 
 ## Working Practices

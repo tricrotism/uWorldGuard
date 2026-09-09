@@ -106,25 +106,6 @@ public final class FlagGroupSupport {
     }
 
     /**
-     * Regions that trust a permission group as an owner or member. Nothing resolves those to players
-     * — {@link ProtectedRegion#isMember} consults the uuid sets only — so the trust they express is
-     * not applied: those players are treated as visitors and refused like anyone else.
-     *
-     * <p>Reported at load because the data survives a round trip through storage untouched. A
-     * WorldGuard region trusting {@code g:staff} migrates cleanly, keeps its groups in the file, and
-     * silently grants nobody anything; without this there is nothing to notice.
-     */
-    public static List<String> groupTrustRegions(final RegionManager manager) {
-        final List<String> ids = new ArrayList<>();
-        for (final ProtectedRegion region : manager.getRegions()) {
-            if (!region.getOwners().getGroups().isEmpty() || !region.getMembers().getGroups().isEmpty()) {
-                ids.add(region.getId());
-            }
-        }
-        return ids;
-    }
-
-    /**
      * Regions where {@code passthrough} is allowed — they take no part in build protection. Reported
      * at startup because the flag is newly honoured: a region carrying it now stops protecting, which
      * is correct WorldGuard behaviour but a change worth stating out loud rather than discovering.

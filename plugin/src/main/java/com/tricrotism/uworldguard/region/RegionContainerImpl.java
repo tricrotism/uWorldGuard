@@ -145,14 +145,6 @@ public final class RegionContainerImpl implements RegionContainer {
                 + " everyone in the region: " + sb);
         }
 
-        final List<String> groupTrust = FlagGroupSupport.groupTrustRegions(manager);
-        if (!groupTrust.isEmpty()) {
-            plugin.getLogger().warning("World '" + world + "': " + groupTrust.size()
-                + " region(s) trust a permission group as owner/member, which is stored but not"
-                + " enforced — those players are treated as visitors. Add them by name instead: "
-                + String.join(", ", groupTrust));
-        }
-
         final List<String> passthrough = FlagGroupSupport.passthroughRegions(manager);
         if (VerboseLogging.enabled() && !passthrough.isEmpty()) {
             plugin.getLogger().info("World '" + world + "': " + passthrough.size()

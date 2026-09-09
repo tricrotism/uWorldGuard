@@ -247,13 +247,8 @@ public final class WorldGuardImporter {
                     + "' is not a valid UUID — not added");
             }
         }
-        final List<String> groups = sec.getStringList("groups");
-        for (final String group : groups) {
+        for (final String group : sec.getStringList("groups")) {
             domain.addGroup(group);
-        }
-        if (!groups.isEmpty()) {
-            warnings.add("region '" + id + "': " + role + " group(s) " + String.join(", ", groups)
-                + " were imported but group trust is not enforced, add those players by name");
         }
         // Pre-UUID WorldGuard installs stored bare player names here. There is nothing to resolve
         // them against offline, so they are dropped — but silently dropping a region's owners is
