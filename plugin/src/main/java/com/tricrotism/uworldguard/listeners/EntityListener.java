@@ -22,7 +22,6 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;
-import java.util.UUID;
 
 /**
  * Enforces mob-spawning and deny-spawn, the explosion flags, mob grief (enderman, ravager, wither,
@@ -172,7 +171,7 @@ public final class EntityListener implements Listener {
             final Player attacker = resolveAttacker(damager);
             if (attacker != null
                 && !query.getApplicableRegions(victim)
-                .testState(Flags.DAMAGE_ANIMALS, attacker.getUniqueId())
+                .testBuild(attacker.getUniqueId(), Flags.DAMAGE_ANIMALS)
                 && !Bypass.has(attacker)) {
                 event.setCancelled(true);
             }
@@ -181,9 +180,21 @@ public final class EntityListener implements Listener {
 
         if (victim instanceof ItemFrame) {
             final Player attacker = resolveAttacker(damager);
-            final UUID subject = attacker == null ? null : attacker.getUniqueId();
-            if (!query.getApplicableRegions(victim).testState(Flags.ENTITY_ITEM_FRAME_DESTROY, subject)
-                && (attacker == null || !Bypass.has(attacker))) {
+            final ApplicableRegionSet at = query.getApplicableRegions(victim);
+            final boolean allowed = attacker != null
+                ? at.testBuild(attacker.getUniqueId(), Flags.ENTITY_ITEM_FRAME_DESTROY)
+                : at.testState(Flags.ENTITY_ITEM_FRAME_DESTROY, null);
+            if (!allowed && (attacker == null || !Bypass.has(attacker))) {
+                event.setCancelled(true);
+            }
+            return;
+        }
+
+        if (victim instanceof LivingEntity && !(victim instanceof Enemy) && !(victim instanceof Player)) {
+            final Player attacker = resolveAttacker(damager);
+            if (attacker != null
+                && !query.getApplicableRegions(victim).canBuild(attacker.getUniqueId())
+                && !Bypass.has(attacker)) {
                 event.setCancelled(true);
             }
         }
@@ -340,11 +351,17 @@ public final class EntityListener implements Listener {
         final StateFlag flag = hanging instanceof ItemFrame
             ? Flags.ENTITY_ITEM_FRAME_DESTROY
             : hanging instanceof Painting ? Flags.ENTITY_PAINTING_DESTROY : null;
-        if (flag == null || query.testState(hanging, flag)) {
+        if (flag == null) {
             return;
         }
-        final Entity remover = event.getRemover();
-        if (remover instanceof Player player && Bypass.has(player)) {
+        final Player remover = resolveAttacker(event.getRemover());
+        final ApplicableRegionSet at = query.getApplicableRegions(hanging);
+        if (remover != null
+            ? at.testBuild(remover.getUniqueId(), flag)
+            : at.testState(flag, null)) {
+            return;
+        }
+        if (remover != null && Bypass.has(remover)) {
             return;
         }
         event.setCancelled(true);

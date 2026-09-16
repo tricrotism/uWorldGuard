@@ -144,8 +144,15 @@ public abstract class ProtectedRegion {
 
     /**
      * True if the player owns this region or any parent.
+     *
+     * <p>Always false when {@link Membership} is off, which is what makes that switch reach every
+     * caller at once rather than only the ones somebody remembered to change. The lists themselves
+     * are untouched, so turning it back on restores exactly what was there.
      */
     public final boolean isOwner(final UUID uuid) {
+        if (!Membership.grantsTrust()) {
+            return false;
+        }
         for (@Nullable ProtectedRegion r = this; r != null; r = r.parent) {
             if (r.owners.containsPlayer(uuid)) {
                 return true;
@@ -155,9 +162,13 @@ public abstract class ProtectedRegion {
     }
 
     /**
-     * True if the player owns or is a member of this region or any parent.
+     * True if the player owns or is a member of this region or any parent. False throughout when
+     * {@link Membership} is off, for the reason {@link #isOwner} gives.
      */
     public final boolean isMember(final UUID uuid) {
+        if (!Membership.grantsTrust()) {
+            return false;
+        }
         for (@Nullable ProtectedRegion r = this; r != null; r = r.parent) {
             if (r.owners.containsPlayer(uuid) || r.members.containsPlayer(uuid)) {
                 return true;

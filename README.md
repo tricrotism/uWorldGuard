@@ -114,12 +114,15 @@ Every command works as `/uworldguard`, `/uwg`, `/worldguard`, or `/wg`. Use whic
 | `/wg define <id> sphere <radiusX> <radiusY> <radiusZ>`       | Create a sphere where you're standing                                       |
 | `/wg define <id> polygon <minY> <maxY>`                      | Create a polygon from a WorldEdit selection, with a Y range of your own     |
 | `/wg redefine <id> [shape] [...]`                            | Reshape a region, keeping its flags, members and priority                   |
+| `/wg select <id>`                                            | Load a region's bounds back into your selection, ready to reshape           |
 | `/wg remove <id>`                                            | Delete a region                                                             |
 | `/wg list [page]`                                            | List regions in this world                                                  |
 | `/wg here`                                                   | What region am I standing in?                                               |
 | `/wg info <id>`                                              | Show a region's owners, members, flags, priority                            |
 | `/wg flag <id> <flag> [value]`                               | Set a flag (leave value blank to clear it, `-g` to limit who it applies to) |
 | `/wg priority <id> <priority>`                               | Set which region wins when they overlap                                     |
+| `/wg priority <a>><b>`                                       | Order regions instead of guessing numbers — `shop>spawn` means shop wins    |
+| `/wg priority`                                               | Same thing as a dialog: pick a region, above or below, and what to beat     |
 | `/wg parent <id> [parent]`                                   | Inherit flags from another region — name no parent to stop inheriting       |
 | `/wg owner <add\|remove> <id> <player>`                      | Manage owners                                                               |
 | `/wg member <add\|remove> <id> <player>`                     | Manage members                                                              |
@@ -140,6 +143,7 @@ block or a wiki page, nothing needs changing.
 | `uworldguard.region.define`    | `define`, in every shape                          |
 | `uworldguard.region.redefine`  | `redefine`, in every shape                        |
 | `uworldguard.region.remove`    | `remove`                                          |
+| `uworldguard.region.select`    | `select`                                          |
 | `uworldguard.region.list`      | `list`                                            |
 | `uworldguard.region.info`      | `info`, `here`                                    |
 | `uworldguard.region.flag`      | `flag`                                            |
@@ -357,6 +361,19 @@ movement:
 which catches logging in inside a no-entry region, or a region being created around someone.
 Neither is a crossing, so neither mode would otherwise notice.
 
+**Turning owners and members off.** If your server decides everything with flags and never uses the trust lists, stop
+consulting them:
+
+```yaml
+regions:
+    membership-grants-trust: false
+```
+
+Read that literally before setting it. Owners and members stop being trusted *anywhere*, so a region with no `build`
+flag denies every player including its own owner, and the only ways left to build there are a flag that allows it or
+`/wg bypass`. The lists are still stored and still editable, so setting it back to `true` restores exactly what was
+there. The plugin warns at every startup while it is off.
+
 **Per-world event skipping.** If another plugin owns interactions in a creative or minigame world,
 tell uWorldGuard to stay out of the way there:
 
@@ -571,6 +588,29 @@ testState(Flags.BLOCK_BREAK, player.getUniqueId())){
 
 `RegionQuery` overloads accept `Location`, `Block`, `Entity`, or raw `(World, x, y, z)` — prefer the
 raw form in hot paths to skip constructing a `Location`.
+
+### Region enter and exit events
+
+Rather than diffing region sets on `PlayerMoveEvent` yourself, listen for the crossing:
+
+```java
+
+@EventHandler
+public void onEnter(RegionEnterEvent event) {
+    Player player = event.getPlayer();
+    ProtectedRegion region = event.getRegion();
+}
+```
+
+`RegionExitEvent` is the other direction, and both extend `RegionBoundaryEvent` if you want to catch them together. They
+fire once per region actually crossed, so walking around inside a region produces nothing, and stepping into three
+overlapping regions at once produces three events.
+
+They are not cancellable. The crossing has already been allowed by the time they fire, because the
+`entry` and `exit` flags decide that first. Turn a player back by teleporting them.
+
+One threading note: these fire on the region thread that owns the destination, which under Folia is not a single shared
+thread. The player and the region are safe to touch there; anything else needs a hop to its own owner.
 
 ### Registering your own flags
 

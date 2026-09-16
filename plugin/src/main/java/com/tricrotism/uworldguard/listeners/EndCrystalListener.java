@@ -45,7 +45,7 @@ public final class EndCrystalListener implements Listener {
         if (player == null) {
             return;
         }
-        if (!query.getApplicableRegions(crystal).testState(Flags.END_CRYSTAL_PLACE, player.getUniqueId())) {
+        if (!query.getApplicableRegions(crystal).testBuild(player.getUniqueId(), Flags.END_CRYSTAL_PLACE)) {
             if (Bypass.has(player)) {
                 return;
             }
@@ -66,7 +66,7 @@ public final class EndCrystalListener implements Listener {
         if (player == null) {
             return;
         }
-        if (!query.getApplicableRegions(crystal).testState(Flags.END_CRYSTAL_INTERACT, player.getUniqueId())) {
+        if (!query.getApplicableRegions(crystal).testBuild(player.getUniqueId(), Flags.END_CRYSTAL_INTERACT)) {
             if (Bypass.has(player)) {
                 return;
             }

@@ -196,7 +196,7 @@ public final class InteractionListener implements Listener {
     private void deny(
         final Cancellable event, final Player player, final Entity target, final StateFlag flag
     ) {
-        if (query.getApplicableRegions(target).testState(flag, player.getUniqueId()) || Bypass.has(player)) {
+        if (query.getApplicableRegions(target).testBuild(player.getUniqueId(), flag) || Bypass.has(player)) {
             return;
         }
         event.setCancelled(true);
@@ -206,7 +206,7 @@ public final class InteractionListener implements Listener {
     private void denyAt(
         final Cancellable event, final Player player, final Block target, final StateFlag flag
     ) {
-        if (query.getApplicableRegions(target).testState(flag, player.getUniqueId()) || Bypass.has(player)) {
+        if (query.getApplicableRegions(target).testBuild(player.getUniqueId(), flag) || Bypass.has(player)) {
             return;
         }
         event.setCancelled(true);

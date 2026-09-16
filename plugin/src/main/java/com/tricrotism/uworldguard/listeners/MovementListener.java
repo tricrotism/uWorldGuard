@@ -3,6 +3,8 @@ package com.tricrotism.uworldguard.listeners;
 import com.tricrotism.uworldguard.config.Bypass;
 import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.config.Settings;
+import com.tricrotism.uworldguard.event.RegionEnterEvent;
+import com.tricrotism.uworldguard.event.RegionExitEvent;
 import com.tricrotism.uworldguard.flags.BooleanFlag;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.flags.State;
@@ -576,7 +578,27 @@ public final class MovementListener implements Listener {
         riddenMounts.remove(mount.getUniqueId());
     }
 
+    /**
+     * Announces a crossing to other plugins, allocating the event only when something is listening.
+     *
+     * <p>This runs per region crossed on a movement path, so the empty case has to cost nothing:
+     * {@code callEvent} on a handler list with no listeners still does work, and the event object
+     * itself is the allocation worth avoiding on a server where no plugin uses these at all.
+     */
+    private static void fireEnter(final Player player, final ProtectedRegion region) {
+        if (RegionEnterEvent.getHandlerList().getRegisteredListeners().length != 0) {
+            Bukkit.getPluginManager().callEvent(new RegionEnterEvent(player, region));
+        }
+    }
+
+    private static void fireExit(final Player player, final ProtectedRegion region) {
+        if (RegionExitEvent.getHandlerList().getRegisteredListeners().length != 0) {
+            Bukkit.getPluginManager().callEvent(new RegionExitEvent(player, region));
+        }
+    }
+
     private void onEnterRegion(final Player player, final ProtectedRegion region) {
+        fireEnter(player, region);
         final String greeting = region.getFlag(Flags.GREETING);
         if (greeting != null) {
             player.sendMessage(messages.render(greeting, player));
@@ -593,6 +615,7 @@ public final class MovementListener implements Listener {
     }
 
     private void onLeaveRegion(final Player player, final ProtectedRegion region) {
+        fireExit(player, region);
         final String farewell = region.getFlag(Flags.FAREWELL);
         if (farewell != null) {
             player.sendMessage(messages.render(farewell, player));
@@ -901,17 +924,21 @@ public final class MovementListener implements Listener {
             }
         }
 
-        if (toSet.worldUses(Flags.FLY) && Boolean.TRUE.equals(toSet.queryValue(Flags.FLY))) {
-            if (!player.getAllowFlight()) {
-                owedChanged |= savedAllowFlight.putIfAbsent(uuid, Boolean.FALSE) == null;
-                player.setAllowFlight(true);
+        final Boolean allowFly = toSet.worldUses(Flags.FLY) ? toSet.queryValue(Flags.FLY) : null;
+        if (allowFly != null) {
+            if (player.getAllowFlight() != allowFly) {
+                owedChanged |= savedAllowFlight.putIfAbsent(uuid, player.getAllowFlight()) == null;
+                player.setAllowFlight(allowFly);
+                if (!allowFly && player.isFlying()) {
+                    player.setFlying(false);
+                }
             }
         } else if (!savedAllowFlight.isEmpty()) {
             final Boolean saved = savedAllowFlight.remove(uuid);
             if (saved != null) {
                 owedChanged = true;
-                if (!saved) {
-                    player.setAllowFlight(false);
+                if (player.getAllowFlight() != saved) {
+                    player.setAllowFlight(saved);
                 }
             }
         }

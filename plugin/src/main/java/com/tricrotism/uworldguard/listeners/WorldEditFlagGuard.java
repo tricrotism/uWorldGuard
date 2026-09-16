@@ -78,7 +78,8 @@ public final class WorldEditFlagGuard {
             @Override
             public <B extends BlockStateHolder<B>> boolean setBlock(final BlockVector3 pos, final B block)
                 throws WorldEditException {
-                if (!query.getApplicableRegions(world, pos.x(), pos.y(), pos.z()).testState(Flags.WORLDEDIT)) {
+                if (!query.getApplicableRegions(world, pos.x(), pos.y(), pos.z())
+                    .testState(Flags.WORLDEDIT, uuid)) {
                     return false;
                 }
                 return super.setBlock(pos, block);

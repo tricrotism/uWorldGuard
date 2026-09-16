@@ -171,7 +171,7 @@ public final class PlayerStateListener implements Listener {
         final Player player = event.getPlayer();
         if (block.getType() == Material.RESPAWN_ANCHOR) {
             final ApplicableRegionSet anchorSet = query.getApplicableRegions(block);
-            if (!anchorSet.testState(Flags.RESPAWN_ANCHORS, player.getUniqueId()) && !Bypass.has(player)) {
+            if (!anchorSet.testBuild(player.getUniqueId(), Flags.RESPAWN_ANCHORS) && !Bypass.has(player)) {
                 event.setCancelled(true);
                 messages.sendDeny(player, Flags.RESPAWN_ANCHORS, anchorSet.queryValue(Flags.DENY_MESSAGE));
             }

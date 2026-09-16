@@ -279,6 +279,9 @@ public final class BuildProtectionListener implements Listener {
             if (Bypass.has(player)) {
                 return;
             }
+            if (InteractFlags.explicitlyAllowed(set, player.getUniqueId(), block)) {
+                return;
+            }
             event.setCancelled(true);
             messages.sendDeny(player, Flags.INTERACT, set.queryValue(Flags.DENY_MESSAGE));
         }

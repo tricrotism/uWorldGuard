@@ -177,7 +177,7 @@ public final class MessageService {
             return Messages.format(template);
         }
         final String text = placeholderApi && player != null ? PlaceholderSupport.expand(player, template) : template;
-        return MM.deserialize(text, resolvers);
+        return Messages.format(text, resolvers);
     }
 
     /**

@@ -25,4 +25,14 @@ public interface SelectionProvider {
     default @Nullable List<BlockVector3> getPolygon(final Player player) {
         return null;
     }
+
+    /**
+     * Replaces the player's selection with {@code selection}.
+     *
+     * <p>The write half of this interface, and the reason {@code /uwg select} can exist: reshaping a
+     * region that is one block short otherwise means rebuilding the selection by hand from its
+     * corners. A cuboid is the only shape either backend can be handed, so a polygon region selects
+     * as its bounding box.
+     */
+    void setSelection(Player player, Selection selection);
 }

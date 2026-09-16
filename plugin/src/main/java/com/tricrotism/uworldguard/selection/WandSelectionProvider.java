@@ -100,4 +100,15 @@ public final class WandSelectionProvider implements SelectionProvider, Listener 
         }
         return new Selection(a.getWorld(), BlockVector3.of(a), BlockVector3.of(b));
     }
+
+    @Override
+    public void setSelection(final Player player, final Selection selection) {
+        final UUID uuid = player.getUniqueId();
+        first.put(uuid, corner(selection.world(), selection.min()));
+        second.put(uuid, corner(selection.world(), selection.max()));
+    }
+
+    private static Location corner(final World world, final BlockVector3 point) {
+        return new Location(world, point.x(), point.y(), point.z());
+    }
 }

@@ -52,4 +52,9 @@ public final class SelectionService implements SelectionProvider {
     public @Nullable List<BlockVector3> getPolygon(final Player player) {
         return delegate.getPolygon(player);
     }
+
+    @Override
+    public void setSelection(final Player player, final Selection selection) {
+        delegate.setSelection(player, selection);
+    }
 }

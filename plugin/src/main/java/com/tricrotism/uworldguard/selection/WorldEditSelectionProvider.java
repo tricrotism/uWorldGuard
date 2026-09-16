@@ -7,6 +7,7 @@ import com.sk89q.worldedit.bukkit.WorldEditPlugin;
 import com.sk89q.worldedit.math.BlockVector2;
 import com.sk89q.worldedit.regions.Polygonal2DRegion;
 import com.sk89q.worldedit.regions.Region;
+import com.sk89q.worldedit.regions.selector.CuboidRegionSelector;
 import com.tricrotism.uworldguard.util.BlockVector3;
 import org.bukkit.entity.Player;
 import org.jspecify.annotations.NullMarked;
@@ -42,6 +43,18 @@ public final class WorldEditSelectionProvider implements SelectionProvider {
         } catch (final IncompleteRegionException e) {
             return null;
         }
+    }
+
+    @Override
+    public void setSelection(final Player player, final Selection selection) {
+        final com.sk89q.worldedit.world.World world = BukkitAdapter.adapt(selection.world());
+        final LocalSession session = worldEdit.getSession(player);
+        session.setRegionSelector(world, new CuboidRegionSelector(world,
+            adapt(selection.min()), adapt(selection.max())));
+    }
+
+    private static com.sk89q.worldedit.math.BlockVector3 adapt(final BlockVector3 vector) {
+        return com.sk89q.worldedit.math.BlockVector3.at(vector.x(), vector.y(), vector.z());
     }
 
     @Override

@@ -122,6 +122,12 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         final Settings settings = new Settings();
         settings.load(getConfig());
         this.settings = settings;
+        if (!settings.membershipGrantsTrust()) {
+            getLogger().warning("regions.membership-grants-trust is off: region owners and members"
+                + " are not trusted anywhere. Protection is flag-only, so a region without a build"
+                + " flag now denies every player including its owner. Set it back to true to"
+                + " restore the stored trust lists, which are kept either way.");
+        }
         EventGate.load(getConfig(), getLogger());
         InteractionWhitelist.load(getConfig(), getLogger());
         final boolean worldGuardCompat = prepareWorldGuardCompat();

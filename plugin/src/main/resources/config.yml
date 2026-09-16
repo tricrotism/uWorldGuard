@@ -108,6 +108,20 @@ updates:
 logging:
     verbose: false
 
+# How much regions themselves decide, before flags are consulted.
+regions:
+    # Whether a region's owner and member lists grant anything.
+    #
+    # Left true, uWorldGuard behaves the way WorldGuard does: owners and members can build in their
+    # own region, and flags restrict everyone else. This is what almost every setup wants.
+    #
+    # Set false and protection becomes purely flag-driven. Trust lists are still stored and still
+    # editable, they are simply never consulted, so nobody is trusted anywhere by virtue of being
+    # listed. Read that literally before turning it off: a region with no build flag then denies
+    # every player including its own owner, and the only ways left to build there are a flag that
+    # allows it or /uwg bypass. Turning it back on restores the lists untouched.
+    membership-grants-trust: true
+
 # uWorldGuard answers to the plugin name "WorldGuard", but Paper attaches no version to a provided
 # name, so a plugin that reads it sees uWorldGuard's own version. Consumers that gate their hook on
 # a WorldGuard version number therefore decline to hook, even though the whole API they want is

@@ -5,10 +5,7 @@ import com.tricrotism.uworldguard.config.Bypass;
 import com.tricrotism.uworldguard.domain.DefaultDomain;
 import com.tricrotism.uworldguard.flags.*;
 import com.tricrotism.uworldguard.flags.Flag;
-import com.tricrotism.uworldguard.gui.ChatInputService;
-import com.tricrotism.uworldguard.gui.FlagMenu;
-import com.tricrotism.uworldguard.gui.RegionMenu;
-import com.tricrotism.uworldguard.gui.SettingsMenu;
+import com.tricrotism.uworldguard.gui.*;
 import com.tricrotism.uworldguard.region.*;
 import com.tricrotism.uworldguard.selection.Selection;
 import com.tricrotism.uworldguard.selection.SelectionService;
@@ -128,6 +125,12 @@ public final class RegionCommands {
      * The three commands worth knowing before any of the others.
      */
     private static final List<String> STARTERS = List.of("/uwg define <id>", "/uwg here", "/uwg menu");
+
+    /**
+     * Gap left between regions renumbered by {@code /uwg priority a>b}. Wide enough that slotting one
+     * region between two of them afterwards is a plain number, not another reorder.
+     */
+    private static final int PRIORITY_STEP = 10;
 
     /**
      * The landing page: three commands to start with, then one clickable row per section. Printing
@@ -657,6 +660,43 @@ public final class RegionCommands {
         }
     }
 
+    /**
+     * Loads a region's bounds back into the player's selection, the step that makes {@code redefine}
+     * usable for a small correction: overshooting a region by a block otherwise means placing both
+     * corners again by hand, when the region already knows where they are.
+     */
+    @Command("uworldguard|uwg|worldguard|wg select <id>")
+    @CommandDescription("Set your selection to a region's bounds")
+    @Permission("uworldguard.region.select")
+    public void select(final Source sender, @Argument(value = "id", suggestions = "region-ids") final String id) {
+        final Player player = asPlayer(sender);
+        if (player == null) return;
+
+        final RegionManager regionManager = managerFor(sender);
+        if (regionManager == null) return;
+
+        final ProtectedRegion region = regionManager.getRegion(id);
+        if (region == null) {
+            error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            return;
+        }
+        if (region.getType() == RegionType.GLOBAL) {
+            error(sender, "The global region covers the whole world and has no bounds to select.");
+            return;
+        }
+
+        final BlockVector3 min = region.getMinimumPoint();
+        final BlockVector3 max = region.getMaximumPoint();
+        selection.setSelection(player, new Selection(player.getWorld(), min, max));
+
+        final String shape = region.getType() == RegionType.CUBOID ? "" : " (bounding box)";
+        success(sender, "Selected <aqua><id></aqua><shape>: <aqua><size></aqua> blocks.",
+            Placeholder.unparsed("id", region.getId()),
+            Placeholder.unparsed("shape", shape),
+            Placeholder.unparsed("size", (max.x() - min.x() + 1) + "x"
+                + (max.y() - min.y() + 1) + "x" + (max.z() - min.z() + 1)));
+    }
+
     @Command("uworldguard|uwg|worldguard|wg info <id>")
     @CommandDescription("Show details about a region")
     @Permission("uworldguard.region.info")
@@ -778,20 +818,43 @@ public final class RegionCommands {
         return List.of("all", "members", "owners", "nonmembers", "nonowners", "none");
     }
 
-    @Command("uworldguard|uwg|worldguard|wg priority <id> <priority>")
-    @CommandDescription("Set a region's priority")
+    /**
+     * A region's priority, set either as a number or as an ordering: {@code /uwg priority shop 10},
+     * or {@code /uwg priority shop>spawn} to say shop wins without inventing a number for it.
+     *
+     * <p>Picking numbers is the part operators get wrong, because the number that works depends on
+     * every other region's number and none of them are on screen. Stating the relationship is what
+     * they actually know. Numbers stay underneath, so everything reading a priority still reads an
+     * int and nothing else in the plugin changes.
+     *
+     * <p>Both spellings share one command because Cloud dispatches on a literal tree, not on how many
+     * arguments were typed: two commands under {@code priority} taking a variable first argument are
+     * an ambiguous node, and the plugin refuses to enable.
+     */
+    @Command("uworldguard|uwg|worldguard|wg priority <id> [priority]")
+    @CommandDescription("Set a region's priority, or order regions with shop>spawn")
     @Permission("uworldguard.region.priority")
     public void priority(
         final Source sender,
         @Argument(value = "id", suggestions = "region-ids") final String id,
-        @Argument("priority") final int priority
+        @Argument("priority") final @Nullable Integer priority
     ) {
         final RegionManager regionManager = managerFor(sender);
         if (regionManager == null) return;
 
+        if (id.indexOf('>') >= 0) {
+            priorityOrder(sender, regionManager, id);
+            return;
+        }
+
         final ProtectedRegion region = regionManager.getRegion(id);
         if (region == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            return;
+        }
+        if (priority == null) {
+            error(sender, "Give a number, like <aqua>/uwg priority <id> 10</aqua>, or an order, like"
+                + " <aqua>/uwg priority shop>spawn</aqua>.", Placeholder.unparsed("id", id));
             return;
         }
 
@@ -799,6 +862,91 @@ public final class RegionCommands {
         regionManager.markDirty();
         success(sender, "Set priority of <aqua><id></aqua> to <aqua><priority></aqua>.",
             Placeholder.unparsed("id", id), Placeholder.unparsed("priority", Integer.toString(priority)));
+    }
+
+    /**
+     * Renumbers the named regions so they rank in the order given, highest first.
+     *
+     * <p>Regions not named keep the priorities they have. The named ones become a run spaced
+     * {@link #PRIORITY_STEP} apart, topped at the highest priority any of them already held, so the
+     * group never sinks below where it was and the gaps leave room to slot something between two of
+     * them later without another reorder.
+     */
+    private void priorityOrder(final Source sender, final RegionManager regionManager, final String order) {
+        final String[] names = order.split(">");
+        final List<ProtectedRegion> chain = new ArrayList<>(names.length);
+        for (final String raw : names) {
+            final String name = raw.trim();
+            if (name.isEmpty()) {
+                error(sender, "Empty name in <aqua><order></aqua>.", Placeholder.unparsed("order", order));
+                return;
+            }
+            final ProtectedRegion region = regionManager.getRegion(name);
+            if (region == null) {
+                error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", name));
+                return;
+            }
+            if (chain.contains(region)) {
+                error(sender, "<aqua><id></aqua> is named twice.", Placeholder.unparsed("id", region.getId()));
+                return;
+            }
+            chain.add(region);
+        }
+        if (chain.size() < 2) {
+            error(sender, "Name at least two regions, like <aqua>/uwg priority shop>spawn</aqua>.");
+            return;
+        }
+
+        applyOrder(regionManager, chain);
+        success(sender, "Priority order set: <aqua><order></aqua>.",
+            Placeholder.unparsed("order", describe(chain)));
+    }
+
+    /**
+     * Renumbers {@code chain} so it ranks in the order given, highest first, and marks the world
+     * dirty. Shared by the command and the dialog so the two cannot drift into different rules.
+     */
+    private static void applyOrder(final RegionManager regionManager, final List<ProtectedRegion> chain) {
+        int top = (chain.size() - 1) * PRIORITY_STEP;
+        for (final ProtectedRegion region : chain) {
+            top = Math.max(top, region.getPriority());
+        }
+        for (int i = 0; i < chain.size(); i++) {
+            chain.get(i).setPriority(top - i * PRIORITY_STEP);
+        }
+        regionManager.markDirty();
+    }
+
+    private static String describe(final List<ProtectedRegion> chain) {
+        final StringBuilder summary = new StringBuilder(64);
+        for (int i = 0; i < chain.size(); i++) {
+            if (i > 0) {
+                summary.append(" > ");
+            }
+            summary.append(chain.get(i).getId()).append(' ').append(chain.get(i).getPriority());
+        }
+        return summary.toString();
+    }
+
+    /**
+     * The same reorder as a dialog, for when you know which region should win but not what either is
+     * called. Opens on {@code /uwg priority} with nothing after it.
+     */
+    @Command("uworldguard|uwg|worldguard|wg priority")
+    @CommandDescription("Pick which region wins, without typing names")
+    @Permission("uworldguard.region.priority")
+    public void priorityDialog(final Source sender) {
+        final Player player = asPlayer(sender);
+        if (player == null) return;
+
+        final RegionManager regionManager = managerFor(sender);
+        if (regionManager == null) return;
+
+        PriorityDialog.open(player, regionManager, (viewer, chain) -> {
+            applyOrder(regionManager, chain);
+            viewer.sendMessage(Messages.format("<green>Priority order set: <aqua><order></aqua>.",
+                Placeholder.unparsed("order", describe(chain))));
+        });
     }
 
     @Command("uworldguard|uwg|worldguard|wg parent <id> [parent]")
