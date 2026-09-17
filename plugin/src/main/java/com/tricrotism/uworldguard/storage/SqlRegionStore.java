@@ -29,9 +29,25 @@ public final class SqlRegionStore implements RegionStore {
         this.user = user;
         this.password = password;
         try (Connection connection = connect(); Statement statement = connection.createStatement()) {
+            final boolean mysql = isMySql(connection);
             statement.execute("CREATE TABLE IF NOT EXISTS uwg_regions ("
-                + "world VARCHAR(255) PRIMARY KEY, data TEXT NOT NULL)");
+                + "world VARCHAR(255) PRIMARY KEY, data " + (mysql ? "LONGTEXT" : "TEXT") + " NOT NULL)");
+            if (mysql) {
+                statement.execute("ALTER TABLE uwg_regions MODIFY data LONGTEXT NOT NULL");
+            }
         }
+    }
+
+    /**
+     * MySQL and MariaDB are the two backends whose SQL differs here. Their {@code TEXT} holds 65,535
+     * bytes, and one world's document passes that with a few hundred regions: strict mode then
+     * refuses every save, and non-strict mode truncates the document, so the next load cannot parse
+     * it and saving is disabled for that world. Tables created before this are widened in place,
+     * which keeps every row. They also take {@code ON DUPLICATE KEY} rather than {@code ON CONFLICT}.
+     */
+    private static boolean isMySql(final Connection connection) throws SQLException {
+        final String product = connection.getMetaData().getDatabaseProductName();
+        return "MySQL".equalsIgnoreCase(product) || "MariaDB".equalsIgnoreCase(product);
     }
 
     /**
@@ -110,17 +126,20 @@ public final class SqlRegionStore implements RegionStore {
      *
      * <p>One statement rather than UPDATE-then-INSERT: split in two, two saves for the same world
      * that both found no row would both go on to insert one, and the second would fail on the
-     * primary key. The syntax is SQLite's and MySQL/MariaDB's alike, and Postgres accepts the
-     * {@code ON CONFLICT} form — so the fallback below covers a backend that takes neither rather
+     * primary key. SQLite and Postgres take {@code ON CONFLICT}, MySQL and MariaDB take
+     * {@code ON DUPLICATE KEY}, so the fallback below covers a backend that takes neither rather
      * than the race.
      */
     @Override
     public void save(final String worldName, final RegionManager manager) throws Exception {
         final String data = serializer.toYaml(manager);
         try (Connection connection = connect()) {
-            try (PreparedStatement upsert = connection.prepareStatement(
-                "INSERT INTO uwg_regions (world, data) VALUES (?, ?)"
-                    + " ON CONFLICT(world) DO UPDATE SET data = excluded.data")) {
+            final String upsertSql = isMySql(connection)
+                ? "INSERT INTO uwg_regions (world, data) VALUES (?, ?)"
+                + " ON DUPLICATE KEY UPDATE data = VALUES(data)"
+                : "INSERT INTO uwg_regions (world, data) VALUES (?, ?)"
+                + " ON CONFLICT(world) DO UPDATE SET data = excluded.data";
+            try (PreparedStatement upsert = connection.prepareStatement(upsertSql)) {
                 upsert.setString(1, worldName);
                 upsert.setString(2, data);
                 upsert.executeUpdate();

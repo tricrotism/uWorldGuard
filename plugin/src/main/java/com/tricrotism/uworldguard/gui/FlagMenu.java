@@ -2,11 +2,13 @@ package com.tricrotism.uworldguard.gui;
 
 import com.tricrotism.uworldguard.flags.*;
 import com.tricrotism.uworldguard.region.ProtectedRegion;
+import com.tricrotism.uworldguard.region.RegionEditorImpl;
 import com.tricrotism.uworldguard.region.RegionManager;
 import com.tricrotism.uworldguard.text.Messages;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.ClickType;
 import org.jspecify.annotations.NullMarked;
@@ -34,13 +36,16 @@ import java.util.function.Predicate;
 @NullMarked
 public final class FlagMenu {
 
+    private final World world;
     private final RegionManager manager;
     private final ProtectedRegion region;
     private final ChatInputService chatInput;
 
     public FlagMenu(
-        final RegionManager manager, final ProtectedRegion region, final ChatInputService chatInput
+        final World world, final RegionManager manager, final ProtectedRegion region,
+        final ChatInputService chatInput
     ) {
+        this.world = world;
         this.manager = manager;
         this.region = region;
         this.chatInput = chatInput;
@@ -319,40 +324,45 @@ public final class FlagMenu {
             return;
         }
         if (clickType.isRightClick()) {
-            region.setFlag(flag, null);
-            manager.markDirty();
-            item.notifyWindows();
+            if (store(player, flag, null)) {
+                item.notifyWindows();
+            }
             return;
         }
-        if (flag instanceof StateFlag stateFlag) {
-            cycleState(stateFlag);
-            manager.markDirty();
-            item.notifyWindows();
-        } else if (flag instanceof BooleanFlag booleanFlag) {
-            cycleBoolean(booleanFlag);
-            manager.markDirty();
-            item.notifyWindows();
+        if (flag instanceof StateFlag || flag instanceof BooleanFlag) {
+            if (store(player, flag, cycled(flag, region.getFlags().get(flag)))) {
+                item.notifyWindows();
+            }
         } else {
             promptValue(player, flag);
         }
     }
 
     /**
-     * Read-then-write, so two operators cycling the same flag from their own menus at the same moment
+     * The next value a left-click moves a state or boolean flag to: unset, then allow/true, then
+     * deny/false, then unset again.
+     *
+     * <p>Read-then-write, so two operators cycling the same flag from their own menus at the same moment
      * can lose one click; the loser sees the result on their next repaint and clicks again. Left as
      * is: an atomic compute on the region would have to exist on the API for one GUI's benefit, and
      * the last write is a valid outcome of two simultaneous clicks either way.
      */
-    private void cycleState(final StateFlag flag) {
-        final Object current = region.getFlags().get(flag);
-        final State next = current == null ? State.ALLOW : current == State.ALLOW ? State.DENY : null;
-        region.setFlag(flag, next);
+    private static @Nullable Object cycled(final Flag<?> flag, final @Nullable Object current) {
+        if (flag instanceof StateFlag) {
+            return current == null ? State.ALLOW : current == State.ALLOW ? State.DENY : null;
+        }
+        return current == null ? Boolean.TRUE : (Boolean) current ? Boolean.FALSE : null;
     }
 
-    private void cycleBoolean(final BooleanFlag flag) {
-        final Object current = region.getFlags().get(flag);
-        final Boolean next = current == null ? Boolean.TRUE : (Boolean) current ? Boolean.FALSE : null;
-        region.setFlag(flag, next);
+    /**
+     * Every flag write this menu makes goes through the same editor as the commands and the API.
+     * Returns whether the region changed.
+     */
+    @SuppressWarnings("unchecked")
+    private boolean store(final Player player, final Flag<?> flag, final @Nullable Object value) {
+        return new RegionEditorImpl(world, manager)
+            .setFlag(region, (Flag<Object>) flag, value, player)
+            .isApplied();
     }
 
     private void promptValue(final Player player, final Flag<?> flag) {
@@ -363,24 +373,15 @@ public final class FlagMenu {
             if (gone(player)) {
                 return;
             }
-            if (applyValue(region, flag, value, player)) {
-                manager.markDirty();
+            final Object parsed = flag.parse(value, player);
+            if (parsed == null) {
+                player.sendMessage(Messages.format("<red>Invalid value for <aqua><flag></aqua>.",
+                    Placeholder.unparsed("flag", flag.getName())));
             } else {
-                player.sendMessage(Messages.format("<red>Invalid value for <aqua>" + flag.getName() + "</aqua>."));
+                store(player, flag, parsed);
             }
             open(player);
         });
-    }
-
-    private static <T> boolean applyValue(
-        final ProtectedRegion region, final Flag<T> flag, final String value, final Player setter
-    ) {
-        final T parsed = flag.parse(value, setter);
-        if (parsed == null) {
-            return false;
-        }
-        region.setFlag(flag, parsed);
-        return true;
     }
 
     private static Material iconFor(final FlagCategory category) {

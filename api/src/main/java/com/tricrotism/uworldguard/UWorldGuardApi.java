@@ -1,9 +1,14 @@
 package com.tricrotism.uworldguard;
 
 import com.tricrotism.uworldguard.region.RegionContainer;
+import com.tricrotism.uworldguard.region.RegionEditor;
 import com.tricrotism.uworldguard.region.RegionQuery;
+import org.bukkit.World;
+import org.bukkit.entity.Player;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+
+import java.util.function.Predicate;
 
 /**
  * Static entry point for other plugins.
@@ -22,8 +27,27 @@ import org.jspecify.annotations.Nullable;
 public final class UWorldGuardApi {
 
     private static volatile @Nullable RegionContainer container;
+    private static volatile Predicate<Player> bypass = _ -> false;
 
-    private UWorldGuardApi() {
+    private UWorldGuardApi() {}
+
+    /**
+     * Whether {@code player} has {@code /uwg bypass} switched on and still holds the permission for
+     * it. uWorldGuard's own protection ignores such a player, and a plugin enforcing protection of its
+     * own should do the same, so staff are not stopped by one plugin and waved through by another.
+     *
+     * <p>False while uWorldGuard is not enabled. Safe from any thread.
+     */
+    public static boolean hasBypass(final Player player) {
+        return bypass.test(player);
+    }
+
+    /**
+     * Internal: bound by the uWorldGuard plugin on enable, reset on disable. Other plugins must never
+     * call this.
+     */
+    public static void bindBypass(final @Nullable Predicate<Player> check) {
+        bypass = check == null ? _ -> false : check;
     }
 
     /**
@@ -46,6 +70,16 @@ public final class UWorldGuardApi {
      */
     public static RegionQuery createQuery() {
         return regionContainer().createQuery();
+    }
+
+    /**
+     * Convenience for {@code regionContainer().editor(world)}: an editor for the world's regions, or
+     * {@code null} while they are not loaded.
+     *
+     * @throws IllegalStateException if uWorldGuard is not enabled
+     */
+    public static @Nullable RegionEditor editor(final World world) {
+        return regionContainer().editor(world);
     }
 
     /**

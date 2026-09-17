@@ -1,9 +1,6 @@
 package com.tricrotism.uworldguard.gui;
 
-import com.tricrotism.uworldguard.region.ProtectedCuboidRegion;
-import com.tricrotism.uworldguard.region.ProtectedRegion;
-import com.tricrotism.uworldguard.region.RegionManager;
-import com.tricrotism.uworldguard.region.RegionType;
+import com.tricrotism.uworldguard.region.*;
 import com.tricrotism.uworldguard.selection.Selection;
 import com.tricrotism.uworldguard.selection.SelectionService;
 import com.tricrotism.uworldguard.text.Messages;
@@ -138,21 +135,23 @@ public final class RegionMenu {
             if (MenuItems.denied(player, MenuItems.REMOVE)) {
                 return;
             }
-            manager.removeRegion(region.getId());
+            if (!new RegionEditorImpl(world, manager).remove(region.getId(), player).isApplied()) {
+                return;
+            }
             if (gui != null) {
                 gui.setContent(buildItems());
             }
             return;
         }
         if (clickType.isShiftClick() && clickType.isLeftClick()) {
-            new MembersMenu(plugin, manager, region, chatInput).open(player);
+            new MembersMenu(plugin, world, manager, region, chatInput).open(player);
             return;
         }
         if (clickType.isRightClick()) {
             teleport(player, region);
             return;
         }
-        new FlagMenu(manager, region, chatInput).open(player);
+        new FlagMenu(world, manager, region, chatInput).open(player);
     }
 
     private void teleport(final Player player, final ProtectedRegion region) {
@@ -190,18 +189,26 @@ public final class RegionMenu {
         player.closeInventory();
         player.sendMessage(Messages.format("<gray>Type a name for the new region, or <red>cancel</red>."));
         chatInput.await(player.getUniqueId(), name -> {
-            if (!ProtectedRegion.isValidId(name)) {
-                player.sendMessage(Messages.format("<red>Region names may only use letters, digits, "
-                        + "<aqua>_</aqua> and <aqua>-</aqua>, up to <aqua><max></aqua> characters.",
-                    Placeholder.unparsed("max", Integer.toString(ProtectedRegion.MAX_ID_LENGTH))));
-            } else if (manager.addRegionIfAbsent(new ProtectedCuboidRegion(name, sel.min(), sel.max())) != null) {
-                player.sendMessage(Messages.format("<red>A region named <aqua><id></aqua> already exists.",
-                    Placeholder.unparsed("id", name)));
-            } else {
-                player.sendMessage(Messages.format("<green>Created region <aqua><id></aqua>.",
-                    Placeholder.unparsed("id", name)));
-            }
+            create(player, name, sel);
             open(player);
         });
+    }
+
+    private void create(final Player player, final String name, final Selection sel) {
+        if (!ProtectedRegion.isValidId(name)) {
+            player.sendMessage(Messages.format("<red>Region names may only use letters, digits, "
+                    + "<aqua>_</aqua> and <aqua>-</aqua>, up to <aqua><max></aqua> characters.",
+                Placeholder.unparsed("max", Integer.toString(ProtectedRegion.MAX_ID_LENGTH))));
+            return;
+        }
+        switch (new RegionEditorImpl(world, manager)
+            .create(new ProtectedCuboidRegion(name, sel.min(), sel.max()), player)) {
+            case APPLIED -> player.sendMessage(Messages.format("<green>Created region <aqua><id></aqua>.",
+                Placeholder.unparsed("id", name)));
+            case ALREADY_EXISTS -> player.sendMessage(Messages.format(
+                "<red>A region named <aqua><id></aqua> already exists.", Placeholder.unparsed("id", name)));
+            default -> {
+            }
+        }
     }
 }

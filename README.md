@@ -589,6 +589,95 @@ testState(Flags.BLOCK_BREAK, player.getUniqueId())){
 `RegionQuery` overloads accept `Location`, `Block`, `Entity`, or raw `(World, x, y, z)` — prefer the
 raw form in hot paths to skip constructing a `Location`.
 
+### Editing regions
+
+Edit through a `RegionEditor`, not by calling setters on regions directly:
+
+```java
+RegionEditor editor = UWorldGuardApi.editor(world); // null while the world's regions are loading
+if(editor ==null)return;
+
+ProtectedRegion claim = new ProtectedCuboidRegion("claim-" + player.getName(), min, max);
+switch(editor.
+
+create(claim, player)){
+        case APPLIED ->editor.
+
+addPlayer(claim, RegionMembershipChangeEvent.Role.OWNER, player.getUniqueId(),player);
+        case ALREADY_EXISTS ->player.
+
+sendMessage("You already have a claim.");
+    case CANCELLED ->{} // another plugin refused, and has already told the player why
+default ->{}
+        }
+
+        editor.
+
+setFlag(claim, Flags.PVP, State.DENY, player);
+editor.
+
+setFlag(claim, Flags.CHEST_ACCESS, State.DENY, RegionGroup.NON_MEMBERS, player); // value and group as one edit
+```
+
+The editor is what uWorldGuard's own commands and menus use, so an edit from your plugin behaves exactly like one an
+operator made:
+
+- It fires the matching edit event, so other plugins can veto your edits the same way they veto an operator's.
+- It saves. A direct `region.setFlag(...)` is never written to disk unless you also call `markDirty()`, and until you
+  do, checks that skip worlds where no region uses a flag can skip yours.
+- It skips edits that change nothing, without firing anything.
+- It returns an `EditResult` instead of throwing: `APPLIED`, `UNCHANGED`, `CANCELLED`, `NOT_FOUND`, `ALREADY_EXISTS` or
+  `INVALID` (a bad id, a parent cycle, or a shape change aimed at the global region).
+
+Pass the player the edit is for as the actor, and they are told when another plugin refuses it. Pass `null` for an edit
+your plugin makes on its own behalf. Several priorities can be set as one edit with `setPriorities`, so a reorder is
+applied completely or not at all.
+
+### Finding overlapping regions
+
+Before creating a claim, ask what it would touch:
+
+```java
+List<ProtectedRegion> overlapping = manager.getRegionsIntersecting(min, max);
+```
+
+Corners can come in either order, the global region is never included, and results are highest priority first. It
+compares bounding boxes, so for cylinders, spheres and polygons a hit means *may* overlap. It walks every region in the
+world, so call it when a claim is made, not on movement.
+
+### Respecting bypass
+
+```java
+if(UWorldGuardApi.hasBypass(player)){
+        return; // staff with /uwg bypass on: let them through, as uWorldGuard does
+        }
+```
+
+True when the player has bypass switched on *and* still holds `uworldguard.bypass`. If your plugin enforces protection
+of its own, checking this keeps staff from being waved through by uWorldGuard and stopped by you.
+
+### Knowing when regions are ready
+
+A world loaded into a running server has its regions read in the background, and until that finishes
+`RegionContainer.get(world)` returns `null`, which looks exactly like a world with no regions. Build per-world caches on
+`RegionsLoadedEvent` instead of `WorldLoadEvent`, and drop them on `RegionsUnloadedEvent`:
+
+```java
+
+@EventHandler
+public void onRegionsLoaded(RegionsLoadedEvent event) {
+    cache.put(event.getWorld().getUID(), buildIndex(event.getManager()));
+}
+
+@EventHandler
+public void onRegionsUnloaded(RegionsUnloadedEvent event) {
+    cache.remove(event.getWorld().getUID());
+}
+```
+
+Worlds present at startup load while uWorldGuard enables, before your plugin does, so read those in your own
+`onEnable`. For worlds loaded later, `RegionsLoadedEvent` is asynchronous.
+
 ### Region enter and exit events
 
 Rather than diffing region sets on `PlayerMoveEvent` yourself, listen for the crossing:
@@ -612,6 +701,47 @@ They are not cancellable. The crossing has already been allowed by the time they
 One threading note: these fire on the region thread that owns the destination, which under Folia is not a single shared
 thread. The player and the region are safe to touch there; anything else needs a hop to its own owner.
 
+### Region edit events
+
+Every deliberate edit to a region fires a cancellable event before it is applied, so a plugin can veto one without
+intercepting commands or reaching in with reflection:
+
+| Event                         | Fired before                                   | Extra                                     |
+|-------------------------------|------------------------------------------------|-------------------------------------------|
+| `RegionCreateEvent`           | a region is added                              | the region, not yet in the world          |
+| `RegionRedefineEvent`         | a region is reshaped                           | `getReplacement()`, the new shape         |
+| `RegionRemoveEvent`           | a region is removed                            | last chance to read it                    |
+| `RegionFlagChangeEvent`       | a flag is set, cleared, or narrowed to a group | `getFlag()`, old/new value, old/new group |
+| `RegionPriorityChangeEvent`   | a priority changes                             | `getOldPriority()`, `getNewPriority()`    |
+| `RegionParentChangeEvent`     | a parent is set, changed or cleared            | `getOldParent()`, `getNewParent()`        |
+| `RegionMembershipChangeEvent` | an owner or member is added or removed         | `getRole()`, `getPlayer()`, `isAdding()`  |
+
+```java
+
+@EventHandler
+public void onFlag(RegionFlagChangeEvent event) {
+    if (event.getFlag() == Flags.PVP && !event.getActor().hasPermission("mine.pvp")) {
+        event.setCancelMessage(Component.text("PvP is set by staff here."));
+        event.setCancelled(true);
+    }
+}
+```
+
+All of them extend `RegionChangeEvent`, which carries the world, the region and the actor. They fire for edits made
+through commands, through `/uwg menu`, and through any plugin using a `RegionEditor`, so a veto cannot be sidestepped by
+clicking instead of typing. `getActor()` is null for an edit a plugin makes on its own behalf. Setting a cancel message
+replaces the generic refusal shown to the actor.
+
+A reorder (`/uwg priority shop>spawn`, the priority dialog, or `setPriorities`) fires one `RegionPriorityChangeEvent`
+per region that moves, all before any is applied, and cancelling any one cancels the whole reorder.
+
+These report edits, not history. Loading a world does not fire them, and neither does a WorldGuard import or a direct
+`RegionManager` / `ProtectedRegion` setter, which is one more reason to edit through a `RegionEditor`.
+
+Each event fires on the thread doing the edit and `isAsynchronous()` says which. Adding an owner or member by name is
+usually async, because resolving the name reads player data off disk. Check before touching the Bukkit API from a
+listener.
+
 ### Registering your own flags
 
 Flags are a registry, so your plugin can add its own and they'll show up in commands, tab-completion
@@ -622,15 +752,24 @@ public static final StateFlag MY_FLAG =
         Flags.register(FlagCategory.PROTECTION, new StateFlag("my-flag", true));
 ```
 
-Register during your plugin's load/enable, before regions are queried. Registering a name that's
-already taken throws `IllegalStateException`.
+Register during your plugin's load or enable. Registering after regions have loaded is fine: stored values for a flag
+nobody has registered yet are kept exactly as written and saved unchanged, and they take effect the moment the flag
+registers. Registering a name that's already taken throws
+`IllegalStateException`.
+
+A flag belongs to the plugin that registered it. When that plugin disables, its flags are released:
+their region values go back to being kept as written, and the name is free to register again. That is what makes
+hot-swapping a plugin work, with a tool such as [Cork](https://github.com/xyzeva/cork)
+or anything else that disables a plugin before loading its replacement. The reloaded copy registers the same names and
+every region gets its values back. Plugins using the WorldGuard API get the same treatment, and their session handlers
+are unregistered along with their flags, so a reload never leaves two copies of a handler running.
 
 Flag types available: `StateFlag` (allow/deny + group), `BooleanFlag`, `IntegerFlag`, `DoubleFlag`,
 `StringFlag`, `StringSetFlag`, `MaterialSetFlag`, `PotionEffectSetFlag`. Subclass `Flag<T>` for
 anything else — you implement `parse`, `marshal` and `unmarshal`.
 
-Each registered flag gets a dense `getIndex()`, stable for the JVM's lifetime, so you can key a
-bitset on it rather than hashing.
+Each registered flag gets a dense `getIndex()`, stable for the JVM's lifetime, so you can key a bitset on it rather than
+hashing. A flag re-registered after its plugin reloads gets its old index back.
 
 ### Region types
 

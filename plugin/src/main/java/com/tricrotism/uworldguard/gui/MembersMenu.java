@@ -1,13 +1,16 @@
 package com.tricrotism.uworldguard.gui;
 
-import com.tricrotism.uworldguard.domain.DefaultDomain;
+import com.tricrotism.uworldguard.event.RegionMembershipChangeEvent;
+import com.tricrotism.uworldguard.region.EditResult;
 import com.tricrotism.uworldguard.region.ProtectedRegion;
+import com.tricrotism.uworldguard.region.RegionEditorImpl;
 import com.tricrotism.uworldguard.region.RegionManager;
 import com.tricrotism.uworldguard.text.Messages;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.jspecify.annotations.NullMarked;
@@ -30,15 +33,17 @@ import java.util.UUID;
 public final class MembersMenu {
 
     private final Plugin plugin;
+    private final World world;
     private final RegionManager manager;
     private final ProtectedRegion region;
     private final String regionId;
     private final ChatInputService chatInput;
     private @Nullable PagedGui<Item> gui;
 
-    public MembersMenu(final Plugin plugin, final RegionManager manager, final ProtectedRegion region,
-                       final ChatInputService chatInput) {
+    public MembersMenu(final Plugin plugin, final World world, final RegionManager manager,
+                       final ProtectedRegion region, final ChatInputService chatInput) {
         this.plugin = plugin;
+        this.world = world;
         this.manager = manager;
         this.region = region;
         this.regionId = region.getId();
@@ -96,13 +101,13 @@ public final class MembersMenu {
                 if (MenuItems.denied(clicker, MenuItems.MEMBERS)) {
                     return;
                 }
-                if (manager.getRegion(regionId) != region) {
+                final EditResult result = new RegionEditorImpl(world, manager)
+                    .removePlayer(region, role(owner), uuid, clicker);
+                if (result == EditResult.NOT_FOUND) {
                     clicker.sendMessage(Messages.format("<red>Region <aqua><id></aqua> no longer exists.",
                         Placeholder.unparsed("id", regionId)));
                     return;
                 }
-                (owner ? region.getOwners() : region.getMembers()).removePlayer(uuid);
-                manager.markDirty();
                 if (gui != null) {
                     gui.setContent(entries());
                 }
@@ -117,6 +122,10 @@ public final class MembersMenu {
                 .addLoreLines(Messages.format("<!i><dark_gray>Click, then type a player name")))
             .addClickHandler((item, click) -> promptAdd(click.player(), owner))
             .build();
+    }
+
+    private static RegionMembershipChangeEvent.Role role(final boolean owner) {
+        return owner ? RegionMembershipChangeEvent.Role.OWNER : RegionMembershipChangeEvent.Role.MEMBER;
     }
 
     private void promptAdd(final Player player, final boolean owner) {
@@ -134,17 +143,20 @@ public final class MembersMenu {
                     player.getScheduler().run(plugin, t -> open(player), null);
                     return;
                 }
-                if (manager.getRegion(regionId) != region) {
-                    player.sendMessage(Messages.format("<red>Region <aqua><id></aqua> no longer exists.",
-                        Placeholder.unparsed("id", regionId)));
-                    return;
+                switch (new RegionEditorImpl(world, manager)
+                    .addPlayer(region, role(owner), target.getUniqueId(), player)) {
+                    case NOT_FOUND -> {
+                        player.sendMessage(Messages.format("<red>Region <aqua><id></aqua> no longer exists.",
+                            Placeholder.unparsed("id", regionId)));
+                        return;
+                    }
+                    case APPLIED, UNCHANGED -> player.sendMessage(Messages.format(
+                        "<green>Added <aqua><player></aqua> as <role>.",
+                        Placeholder.unparsed("player", name),
+                        Placeholder.unparsed("role", owner ? "owner" : "member")));
+                    default -> {
+                    }
                 }
-                final DefaultDomain domain = owner ? region.getOwners() : region.getMembers();
-                domain.addPlayer(target.getUniqueId());
-                manager.markDirty();
-                player.sendMessage(Messages.format("<green>Added <aqua><player></aqua> as <role>.",
-                    Placeholder.unparsed("player", name),
-                    Placeholder.unparsed("role", owner ? "owner" : "member")));
                 player.getScheduler().run(plugin, t -> open(player), null);
             }));
     }

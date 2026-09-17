@@ -26,8 +26,6 @@ public class UWorldGuardLoader implements PluginLoader {
         resolver.addDependency(new Dependency(
             new DefaultArtifact("org.incendo:cloud-annotations:2.0.0"), null));
         resolver.addDependency(new Dependency(
-            new DefaultArtifact("com.github.ben-manes.caffeine:caffeine:3.1.8"), null));
-        resolver.addDependency(new Dependency(
             new DefaultArtifact("org.xerial:sqlite-jdbc:3.47.1.0"), null));
 
         classpathBuilder.addLibrary(resolver);

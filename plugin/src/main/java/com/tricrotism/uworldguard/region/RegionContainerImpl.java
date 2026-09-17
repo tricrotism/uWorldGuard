@@ -1,5 +1,7 @@
 package com.tricrotism.uworldguard.region;
 
+import com.tricrotism.uworldguard.event.RegionsLoadedEvent;
+import com.tricrotism.uworldguard.event.RegionsUnloadedEvent;
 import com.tricrotism.uworldguard.storage.RegionStore;
 import com.tricrotism.uworldguard.util.VerboseLogging;
 import org.bukkit.Bukkit;
@@ -8,10 +10,7 @@ import org.bukkit.plugin.Plugin;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
@@ -35,6 +34,13 @@ public final class RegionContainerImpl implements RegionContainer {
     private final Plugin plugin;
     private final RegionStore store;
     private final Map<UUID, Loaded> loaded = new ConcurrentHashMap<>();
+    /**
+     * The managers in {@link #loaded}, republished whenever that map changes. {@link #anyRegionUses}
+     * runs on hot event paths — hopper transfers, entity spawns, item use — and iterating the map
+     * there allocates an iterator per call for a walk over two or three worlds. Reading a snapshot
+     * array allocates nothing.
+     */
+    private volatile RegionManager[] managers = new RegionManager[0];
     private final Set<String> failedLoads = ConcurrentHashMap.newKeySet();
     /**
      * Worlds whose async populate is still in flight. The publish at the end of {@link #load} claims
@@ -83,7 +89,9 @@ public final class RegionContainerImpl implements RegionContainer {
             }
             manager.clearDirty();
             loaded.put(world.getUID(), new Loaded(name, manager));
+            republishManagers();
             warnAboutUnenforcedGroups(name, manager);
+            Bukkit.getPluginManager().callEvent(new RegionsLoadedEvent(world, manager));
         }
     }
 
@@ -119,7 +127,10 @@ public final class RegionContainerImpl implements RegionContainer {
                 return;
             }
             loaded.put(uid, new Loaded(name, manager));
+            republishManagers();
+            FlagLifecycle.resolvePending(manager);
             warnAboutUnenforcedGroups(name, manager);
+            Bukkit.getPluginManager().callEvent(new RegionsLoadedEvent(world, manager));
         });
         return manager;
     }
@@ -164,7 +175,9 @@ public final class RegionContainerImpl implements RegionContainer {
     public void unload(final World world) {
         loading.remove(world.getUID());
         final Loaded removed = loaded.remove(world.getUID());
+        republishManagers();
         if (removed != null) {
+            Bukkit.getPluginManager().callEvent(new RegionsUnloadedEvent(world, removed.manager()));
             saveAsync(removed.name(), removed.manager(), () -> {});
         }
     }
@@ -231,17 +244,43 @@ public final class RegionContainerImpl implements RegionContainer {
         return found == null ? null : found.manager();
     }
 
+    @Override
+    public @Nullable RegionEditor editor(final World world) {
+        final RegionManager manager = get(world);
+        return manager == null ? null : new RegionEditorImpl(world, manager);
+    }
+
     /**
      * Whether any loaded world has a region setting {@code flag}. Cheap to poll: each manager
      * answers from a cached index. Lets periodic tasks skip work entirely when a flag is unused.
      */
     public boolean anyRegionUses(final com.tricrotism.uworldguard.flags.Flag<?> flag) {
-        for (final Loaded world : loaded.values()) {
-            if (world.manager().anyRegionUses(flag)) {
+        final RegionManager[] snapshot = managers;
+        for (int i = 0; i < snapshot.length; i++) {
+            if (snapshot[i].anyRegionUses(flag)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Every loaded world's manager, as of the last load or unload. Immutable.
+     */
+    public List<RegionManager> managers() {
+        return List.of(managers);
+    }
+
+    /**
+     * Rebuilds the {@link #managers} snapshot. Called after every {@link #loaded} mutation; world
+     * loads and unloads are rare enough that rebuilding beats keeping the two in step incrementally.
+     */
+    private void republishManagers() {
+        final List<RegionManager> snapshot = new ArrayList<>(loaded.size());
+        for (final Loaded world : loaded.values()) {
+            snapshot.add(world.manager());
+        }
+        managers = snapshot.toArray(new RegionManager[0]);
     }
 
     @Override

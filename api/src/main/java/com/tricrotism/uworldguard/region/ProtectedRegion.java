@@ -34,6 +34,13 @@ public abstract class ProtectedRegion {
 
     private volatile int priority;
     private volatile @Nullable ProtectedRegion parent;
+    private volatile @Nullable Object compatShim;
+    /**
+     * Stored flag entries no registered flag can read, by their key in storage, kept as written.
+     * Allocated on first use: almost every region has none, and a map per region would be the whole
+     * cost of the feature.
+     */
+    private volatile @Nullable Map<String, Object> unresolvedFlags;
 
     /**
      * Longest id accepted by {@link #isValidId}. Long enough for any descriptive name, short enough
@@ -69,6 +76,34 @@ public abstract class ProtectedRegion {
 
     public final String getId() {
         return id;
+    }
+
+    /**
+     * Internal (compat layer): the WorldGuard-API shim built over this region, or {@code null} while
+     * nothing has asked for one. Plugins should not call this.
+     *
+     * <p>Consumers of the shim compare regions by identity and use them as map keys, so wrapping the
+     * same region twice has to yield the same instance. Holding that instance here rather than in a
+     * side map makes the lookup a field read on the hottest path the compat layer has, and ties the
+     * shim's lifetime to the region's: a deleted region takes its wrapper with it.
+     */
+    public final @Nullable Object uwgCompatShim() {
+        return compatShim;
+    }
+
+    /**
+     * Internal (compat layer): publish {@code shim} as this region's wrapper, returning whichever
+     * instance won when two threads wrapped the same region at once. Plugins should not call this.
+     */
+    public final Object uwgLinkCompatShim(final Object shim) {
+        synchronized (this) {
+            final Object existing = compatShim;
+            if (existing != null) {
+                return existing;
+            }
+            compatShim = shim;
+            return shim;
+        }
     }
 
     public abstract RegionType getType();
@@ -255,6 +290,47 @@ public abstract class ProtectedRegion {
     }
 
     /**
+     * Internal (storage): stored flag entries this region carries for flags nobody has registered,
+     * keyed as they are in storage ({@code name} for a value, {@code name-group} for its group).
+     * They are written back unchanged on save, and applied when a matching flag registers. Plugins
+     * should not call this.
+     *
+     * <p>Without them a flag whose plugin loaded late, failed to load, or was unloaded to be swapped
+     * lost its value on every region at the next save.
+     */
+    public final Map<String, Object> getUnresolvedFlags() {
+        final Map<String, Object> current = unresolvedFlags;
+        return current == null ? Map.of() : Collections.unmodifiableMap(current);
+    }
+
+    /**
+     * Internal (storage): keep {@code raw} under {@code key} until a flag can read it. Plugins
+     * should not call this.
+     */
+    public final void putUnresolvedFlag(final String key, final Object raw) {
+        Map<String, Object> current = unresolvedFlags;
+        if (current == null) {
+            synchronized (this) {
+                current = unresolvedFlags;
+                if (current == null) {
+                    current = new ConcurrentHashMap<>(4);
+                    unresolvedFlags = current;
+                }
+            }
+        }
+        current.put(key, raw);
+    }
+
+    /**
+     * Internal (storage): take back the entry kept under {@code key}, or {@code null}. Plugins
+     * should not call this.
+     */
+    public final @Nullable Object removeUnresolvedFlag(final String key) {
+        final Map<String, Object> current = unresolvedFlags;
+        return current == null ? null : current.remove(key);
+    }
+
+    /**
      * Copy everything that is not geometry from {@code other}: flags and their group qualifiers,
      * owners, members, priority and parent. Backs {@link RegionManager#redefineRegion}, where a
      * region is reshaped by building a new one of the wanted shape under the same id — bounds are
@@ -264,6 +340,9 @@ public abstract class ProtectedRegion {
     public final void copyStateFrom(final ProtectedRegion other) {
         flags.putAll(other.flags);
         flagGroups.putAll(other.flagGroups);
+        for (final Map.Entry<String, Object> entry : other.getUnresolvedFlags().entrySet()) {
+            putUnresolvedFlag(entry.getKey(), entry.getValue());
+        }
         copyDomain(other.owners, owners);
         copyDomain(other.members, members);
         priority = other.priority;

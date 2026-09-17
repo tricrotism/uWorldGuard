@@ -250,10 +250,7 @@ public final class PlayerStateListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDamage(final EntityDamageEvent event) {
-        if (EventGate.disabled(event)) {
-            return;
-        }
-        if (!(event.getEntity() instanceof Player player)) {
+        if (!(event.getEntity() instanceof Player player) || EventGate.disabled(event)) {
             return;
         }
         final ApplicableRegionSet set = query.getApplicableRegions(player);

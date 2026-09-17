@@ -10,6 +10,7 @@ import com.tricrotism.uworldguard.listeners.*;
 import com.tricrotism.uworldguard.migration.MigrationCommands;
 import com.tricrotism.uworldguard.packet.PacketHooks;
 import com.tricrotism.uworldguard.packet.PacketSink;
+import com.tricrotism.uworldguard.region.FlagLifecycle;
 import com.tricrotism.uworldguard.region.RegionContainer;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
 import com.tricrotism.uworldguard.region.RegionQuery;
@@ -21,6 +22,7 @@ import com.tricrotism.uworldguard.storage.SqlRegionStore;
 import com.tricrotism.uworldguard.storage.YamlRegionStore;
 import com.tricrotism.uworldguard.text.ChatTags;
 import com.tricrotism.uworldguard.text.MessageService;
+import com.tricrotism.uworldguard.text.Messages;
 import com.tricrotism.uworldguard.wgcompat.FlagBridge;
 import com.tricrotism.uworldguard.wgcompat.SessionDispatch;
 import com.tricrotism.uworldguard.wgcompat.WgCompatBridge;
@@ -48,6 +50,8 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
     private @Nullable RegionStore store;
     private @Nullable Metrics metrics;
     private volatile @Nullable ScheduledTask autoSaveTask;
+    private volatile @Nullable ScheduledTask messageExpiryTask;
+    private @Nullable FlagLifecycle flagLifecycle;
     private @Nullable PlayerTickService playerTick;
     private @Nullable ChunkUnloadService chunkUnload;
     private @Nullable PendingRestores restores;
@@ -66,6 +70,7 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         }
         EventGate.load(getConfig(), getLogger());
         InteractionWhitelist.load(getConfig(), getLogger());
+        Messages.expire();
         final MovementListener listener = this.movement;
         if (listener != null && current != null) {
             listener.applySettings(current);
@@ -138,10 +143,15 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         final RegionContainerImpl regionContainer = new RegionContainerImpl(this, store);
         regionContainer.loadAll();
         this.container = regionContainer;
+        final FlagLifecycle flagLifecycle = new FlagLifecycle(this, regionContainer);
+        flagLifecycle.install();
+        this.flagLifecycle = flagLifecycle;
+        getServer().getPluginManager().registerEvents(flagLifecycle, this);
 
         getServer().getServicesManager().register(
             RegionContainer.class, regionContainer, this, ServicePriority.Normal);
         UWorldGuardApi.bind(regionContainer);
+        UWorldGuardApi.bindBypass(Bypass::has);
         if (worldGuardCompat) {
             activateWorldGuardCompat(regionContainer);
         }
@@ -203,12 +213,14 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         chunkUnload.start();
 
         if (getServer().getPluginManager().getPlugin("WorldEdit") != null) {
-            final WorldEditFlagGuard guard = new WorldEditFlagGuard(query, regionContainer);
+            final WorldEditFlagGuard guard = new WorldEditFlagGuard(regionContainer);
             guard.register();
             this.worldEditGuard = guard;
         }
 
         scheduleAutoSave(settings);
+        this.messageExpiryTask = getServer().getAsyncScheduler().runAtFixedRate(this,
+            _ -> Messages.expire(), Messages.EXPIRE_MINUTES, Messages.EXPIRE_MINUTES, TimeUnit.MINUTES);
 
         if (settings.updateCheck()) {
             new UpdateChecker(this).start();
@@ -326,13 +338,23 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
     }
 
     private void releaseRuntime() {
+        if (flagLifecycle != null) {
+            flagLifecycle.uninstall();
+            flagLifecycle = null;
+        }
         SessionDispatch.shutdown();
         WgCompatBridge.unbind();
         UWorldGuardApi.bind(null);
+        UWorldGuardApi.bindBypass(null);
         final ScheduledTask autoSave = this.autoSaveTask;
         if (autoSave != null) {
             autoSave.cancel();
             this.autoSaveTask = null;
+        }
+        final ScheduledTask messageExpiry = this.messageExpiryTask;
+        if (messageExpiry != null) {
+            messageExpiry.cancel();
+            this.messageExpiryTask = null;
         }
         if (playerTick != null) {
             playerTick.stop();

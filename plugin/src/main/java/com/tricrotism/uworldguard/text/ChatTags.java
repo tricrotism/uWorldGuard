@@ -69,6 +69,13 @@ public final class ChatTags {
         return !muted.isEmpty() || !deafened.isEmpty();
     }
 
+    /**
+     * Whether anybody is deafened, so a mute-only server never walks a message's recipients.
+     */
+    public boolean anyDeafened() {
+        return !deafened.isEmpty();
+    }
+
     private static void toggle(final Set<UUID> set, final UUID uuid, final boolean value) {
         if (value) {
             set.add(uuid);

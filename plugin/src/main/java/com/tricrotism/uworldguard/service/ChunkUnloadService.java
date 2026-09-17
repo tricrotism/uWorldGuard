@@ -26,7 +26,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>A slow global task reconciles the desired ticket set every few seconds, so flag changes, region
  * edits, and world loads are all picked up without per-edit hooks; the steady state issues no work.
- * The reconcile is skipped when no region uses the flag and nothing is currently ticketed. Tickets
+ * The reconcile is skipped when no region uses the flag and nothing is currently ticketed, and so is
+ * each world on its own terms: the signature walks every region in a world, so without the per-world
+ * test one region setting the flag in one world cost a full walk of every other world every period,
+ * on the global thread. Tickets
  * are added/removed on the owning chunk's region thread for Folia safety, and a per-region chunk-span
  * cap stops one oversized region from pinning an unbounded number of chunks.
  */
@@ -94,6 +97,9 @@ public final class ChunkUnloadService {
                 continue;
             }
             final UUID uid = world.getUID();
+            if (!manager.anyRegionUses(Flags.CHUNK_UNLOAD) && !ticketed.containsKey(uid)) {
+                continue;
+            }
             final long signature = signatureOf(manager);
             final Long previous = signatures.get(uid);
             if (previous != null && previous == signature) {

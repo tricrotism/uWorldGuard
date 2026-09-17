@@ -183,7 +183,7 @@ public class Session {
         }
 
         final ApplicableRegionSet fromSet = regionsAt(from);
-        if (fromSet.size() == 0 && toSet.size() == 0) {
+        if ((fromSet.size() == 0 && toSet.size() == 0) || sameRegions(fromSet, toSet)) {
             com.tricrotism.uworldguard.wgcompat.CompatDiagnostics.SESSION_DISPATCHES.increment();
             return null;
         }
@@ -227,6 +227,40 @@ public class Session {
                 + type.getName() + " threw from " + stage + "; continuing without it. This is a bug"
                 + " in the plugin that registered the handler, not in uWorldGuard.", error);
         }
+    }
+
+    /**
+     * Whether two sets hold the same engine regions, answered without wrapping or allocating.
+     *
+     * <p>Nearly every block crossing stays inside the regions it started in, and the boundary check
+     * below builds two hash sets of wrapped regions just to learn that. Comparing the engine lists by
+     * identity settles the common case first. Order is not trusted, because regions of equal
+     * priority can come back in a different order from neighboring chunks, so this is a
+     * containment test: a handful of regions at most, so the quadratic walk is cheaper than hashing.
+     * Anything other than two plain engine-backed sets returns false and takes the full path.
+     */
+    private static boolean sameRegions(final ApplicableRegionSet a, final ApplicableRegionSet b) {
+        if (!(a instanceof com.tricrotism.uworldguard.wgcompat.WrappedRegionSet wrappedA)
+            || !(b instanceof com.tricrotism.uworldguard.wgcompat.WrappedRegionSet wrappedB)) {
+            return false;
+        }
+        final com.tricrotism.uworldguard.region.ApplicableRegionSet engineA = wrappedA.uwgBacking();
+        final com.tricrotism.uworldguard.region.ApplicableRegionSet engineB = wrappedB.uwgBacking();
+        final int n = engineA.size();
+        if (n != engineB.size()) {
+            return false;
+        }
+        outer:
+        for (int i = 0; i < n; i++) {
+            final com.tricrotism.uworldguard.region.ProtectedRegion region = engineA.get(i);
+            for (int j = 0; j < n; j++) {
+                if (engineB.get(j) == region) {
+                    continue outer;
+                }
+            }
+            return false;
+        }
+        return true;
     }
 
     private static Set<ProtectedRegion> setOf(final ApplicableRegionSet set) {

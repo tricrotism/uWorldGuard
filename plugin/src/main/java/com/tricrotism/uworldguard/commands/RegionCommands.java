@@ -2,7 +2,7 @@ package com.tricrotism.uworldguard.commands;
 
 import com.tricrotism.uworldguard.UWorldGuard;
 import com.tricrotism.uworldguard.config.Bypass;
-import com.tricrotism.uworldguard.domain.DefaultDomain;
+import com.tricrotism.uworldguard.event.RegionMembershipChangeEvent;
 import com.tricrotism.uworldguard.flags.*;
 import com.tricrotism.uworldguard.flags.Flag;
 import com.tricrotism.uworldguard.gui.*;
@@ -20,6 +20,8 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.World;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.incendo.cloud.annotation.specifier.Greedy;
 import org.incendo.cloud.annotations.*;
@@ -301,12 +303,12 @@ public final class RegionCommands {
 
         final List<BlockVector3> points = selection.getPolygon(player);
         if (points == null || points.size() < 3) {
-            apply(sender, regionManager, new ProtectedCuboidRegion(id, sel.min(), sel.max()), replace);
+            apply(sender, player.getWorld(), regionManager, new ProtectedCuboidRegion(id, sel.min(), sel.max()), replace);
             return;
         }
 
         try {
-            apply(sender, regionManager,
+            apply(sender, player.getWorld(), regionManager,
                 new ProtectedPolygonRegion(id, points, sel.min().y(), sel.max().y()), replace);
         } catch (final IllegalArgumentException e) {
             error(sender, e.getMessage());
@@ -358,7 +360,7 @@ public final class RegionCommands {
 
         @NotNull final Location loc = player.getLocation();
         try {
-            apply(sender, regionManager, new ProtectedCylinderRegion(
+            apply(sender, player.getWorld(), regionManager, new ProtectedCylinderRegion(
                 id, loc.getBlockX(), loc.getBlockZ(), radiusX, radiusZ, minY, maxY), replace);
         } catch (final IllegalArgumentException e) {
             error(sender, e.getMessage());
@@ -408,7 +410,7 @@ public final class RegionCommands {
 
         final Location loc = player.getLocation();
         try {
-            apply(sender, regionManager, new ProtectedSphereRegion(
+            apply(sender, player.getWorld(), regionManager, new ProtectedSphereRegion(
                 id, loc.getBlockX(), loc.getBlockY(), loc.getBlockZ(), radiusX, radiusY, radiusZ), replace);
         } catch (final IllegalArgumentException e) {
             error(sender, e.getMessage());
@@ -460,7 +462,7 @@ public final class RegionCommands {
         }
 
         try {
-            apply(sender, regionManager, new ProtectedPolygonRegion(id, points, minY, maxY), replace);
+            apply(sender, player.getWorld(), regionManager, new ProtectedPolygonRegion(id, points, minY, maxY), replace);
         } catch (final IllegalArgumentException e) {
             error(sender, e.getMessage());
         }
@@ -472,60 +474,51 @@ public final class RegionCommands {
      * the existing region's flags, members, priority and children instead of claiming a free id.
      */
     private void apply(
-        final Source sender, final RegionManager regionManager, final ProtectedRegion region,
-        final boolean replace
+        final Source sender, final World world, final RegionManager regionManager,
+        final ProtectedRegion region, final boolean replace
     ) {
+        final TagResolver idTag = Placeholder.unparsed("id", region.getId());
         if (!ProtectedRegion.isValidId(region.getId())) {
             error(sender, "Region names may only use letters, digits, <aqua>_</aqua> and "
                     + "<aqua>-</aqua>, up to <aqua><max></aqua> characters.",
                 Placeholder.unparsed("max", Integer.toString(ProtectedRegion.MAX_ID_LENGTH)));
             return;
         }
+        final RegionEditor editor = new RegionEditorImpl(world, regionManager);
 
         if (replace) {
-            if (GlobalProtectedRegion.ID.equalsIgnoreCase(region.getId())) {
-                error(sender, "The global region covers the whole world and has no shape to redefine.");
-                return;
+            switch (editor.redefine(region, sender.source())) {
+                case APPLIED -> success(sender, "Redefined region <aqua><id></aqua>.", idTag);
+                case NOT_FOUND -> error(sender, "No region named <aqua><id></aqua>.", idTag);
+                case INVALID -> error(sender, "The global region covers the whole world and has no shape to redefine.");
+                default -> {
+                }
             }
-            if (regionManager.redefineRegion(region) == null) {
-                error(sender, "No region named <aqua><id></aqua>.",
-                    Placeholder.unparsed("id", region.getId()));
-                return;
-            }
-
-            success(sender, "Redefined region <aqua><id></aqua>.",
-                Placeholder.unparsed("id", region.getId()));
             return;
         }
 
-        if (regionManager.addRegionIfAbsent(region) != null) {
-            error(sender, "A region named <aqua><id></aqua> already exists.",
-                Placeholder.unparsed("id", region.getId()));
-            return;
+        switch (editor.create(region, sender.source())) {
+            case APPLIED -> success(sender, "Created region <aqua><id></aqua>.", idTag);
+            case ALREADY_EXISTS -> error(sender, "A region named <aqua><id></aqua> already exists.", idTag);
+            default -> {
+            }
         }
-
-        success(sender, "Created region <aqua><id></aqua>.",
-            Placeholder.unparsed("id", region.getId()));
     }
 
     @Command("uworldguard|uwg|worldguard|wg remove <id>")
     @CommandDescription("Remove a region")
     @Permission("uworldguard.region.remove")
     public void remove(final Source sender, @Argument(value = "id", suggestions = "region-ids") final String id) {
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
 
-        if (GlobalProtectedRegion.ID.equalsIgnoreCase(id)) {
-            error(sender, "The global region cannot be removed.");
-            return;
+        switch (editor.remove(id, sender.source())) {
+            case APPLIED -> success(sender, "Removed region <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            case NOT_FOUND -> error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            case INVALID -> error(sender, "The global region cannot be removed.");
+            default -> {
+            }
         }
-
-        if (regionManager.removeRegion(id) == null) {
-            error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
-            return;
-        }
-
-        success(sender, "Removed region <aqua><id></aqua>.", Placeholder.unparsed("id", id));
     }
 
     /**
@@ -749,10 +742,11 @@ public final class RegionCommands {
             suggestions = "flag-groups") final @Nullable String groupName,
         @Argument(value = "value", suggestions = "flag-values") @Greedy final @Nullable String value
     ) {
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
+        final Player player = (Player) sender.source();
 
-        final ProtectedRegion region = regionManager.getRegion(id);
+        final ProtectedRegion region = editor.manager().getRegion(id);
         if (region == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
             return;
@@ -775,36 +769,37 @@ public final class RegionCommands {
             }
         }
 
+        final TagResolver flagTag = Placeholder.unparsed("flag", flag.getName());
         if (value == null) {
             if (group != null) {
-                if (region.getFlags().get(flag) == null) {
-                    error(sender, "Flag <aqua><flag></aqua> is not set on that region, so there is"
-                        + " nothing to qualify.", Placeholder.unparsed("flag", flag.getName()));
-                    return;
+                switch (editor.setFlagGroup(region, flag, group, sender.source())) {
+                    case APPLIED, UNCHANGED -> success(sender,
+                        "Flag <aqua><flag></aqua> now applies to <aqua><group></aqua>.",
+                        flagTag, Placeholder.unparsed("group", group.serialized()));
+                    case INVALID -> error(sender, "Flag <aqua><flag></aqua> is not set on that region, so"
+                        + " there is nothing to qualify.", flagTag);
+                    default -> {
+                    }
                 }
-                region.setFlagGroup(flag, group);
-                regionManager.markDirty();
-                success(sender, "Flag <aqua><flag></aqua> now applies to <aqua><group></aqua>.",
-                    Placeholder.unparsed("flag", flag.getName()),
-                    Placeholder.unparsed("group", group.serialized()));
                 return;
             }
-            region.setFlag(flag, null);
-            region.setFlagGroup(flag, null);
-            regionManager.markDirty();
-            success(sender, "Cleared flag <aqua><flag></aqua>.", Placeholder.unparsed("flag", flag.getName()));
+            final EditResult cleared = editor.setFlag(region, flag, null, sender.source());
+            if (cleared == EditResult.APPLIED || cleared == EditResult.UNCHANGED) {
+                success(sender, "Cleared flag <aqua><flag></aqua>.", flagTag);
+            }
             return;
         }
 
-        if (!applyFlag(region, flag, value, asPlayer(sender))) {
-            error(sender, "Invalid value for flag <aqua><flag></aqua>.", Placeholder.unparsed("flag", flag.getName()));
+        final Object parsed = flag.parse(value, player);
+        if (parsed == null) {
+            error(sender, "Invalid value for flag <aqua><flag></aqua>.", flagTag);
             return;
         }
-        if (groupName != null) {
-            region.setFlagGroup(flag, group);
+        final EditResult set = storeFlag(editor, region, flag, parsed, group, sender.source());
+        if (set != EditResult.APPLIED && set != EditResult.UNCHANGED) {
+            return;
         }
 
-        regionManager.markDirty();
         final boolean qualified = group != null && group != RegionGroup.ALL;
         success(sender, "Set flag <aqua><flag></aqua> to <aqua><value></aqua>"
                 + (qualified ? " for <aqua><group></aqua>" : "") + ".",
@@ -839,15 +834,15 @@ public final class RegionCommands {
         @Argument(value = "id", suggestions = "region-ids") final String id,
         @Argument("priority") final @Nullable Integer priority
     ) {
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
 
         if (id.indexOf('>') >= 0) {
-            priorityOrder(sender, regionManager, id);
+            priorityOrder(sender, editor, id);
             return;
         }
 
-        final ProtectedRegion region = regionManager.getRegion(id);
+        final ProtectedRegion region = editor.manager().getRegion(id);
         if (region == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
             return;
@@ -858,10 +853,11 @@ public final class RegionCommands {
             return;
         }
 
-        region.setPriority(priority);
-        regionManager.markDirty();
-        success(sender, "Set priority of <aqua><id></aqua> to <aqua><priority></aqua>.",
-            Placeholder.unparsed("id", id), Placeholder.unparsed("priority", Integer.toString(priority)));
+        final EditResult result = editor.setPriority(region, priority, sender.source());
+        if (result == EditResult.APPLIED || result == EditResult.UNCHANGED) {
+            success(sender, "Set priority of <aqua><id></aqua> to <aqua><priority></aqua>.",
+                Placeholder.unparsed("id", id), Placeholder.unparsed("priority", Integer.toString(priority)));
+        }
     }
 
     /**
@@ -872,7 +868,8 @@ public final class RegionCommands {
      * group never sinks below where it was and the gaps leave room to slot something between two of
      * them later without another reorder.
      */
-    private void priorityOrder(final Source sender, final RegionManager regionManager, final String order) {
+    private void priorityOrder(final Source sender, final RegionEditor editor, final String order) {
+        final RegionManager regionManager = editor.manager();
         final String[] names = order.split(">");
         final List<ProtectedRegion> chain = new ArrayList<>(names.length);
         for (final String raw : names) {
@@ -897,24 +894,31 @@ public final class RegionCommands {
             return;
         }
 
-        applyOrder(regionManager, chain);
-        success(sender, "Priority order set: <aqua><order></aqua>.",
-            Placeholder.unparsed("order", describe(chain)));
+        if (applyOrder(editor, chain, sender.source())) {
+            success(sender, "Priority order set: <aqua><order></aqua>.",
+                Placeholder.unparsed("order", describe(chain)));
+        }
     }
 
     /**
-     * Renumbers {@code chain} so it ranks in the order given, highest first, and marks the world
-     * dirty. Shared by the command and the dialog so the two cannot drift into different rules.
+     * Renumbers {@code chain} so it ranks in the order given, highest first, as one edit. Shared by
+     * the command and the dialog so the two cannot drift into different rules.
+     *
+     * @return whether the order now holds
      */
-    private static void applyOrder(final RegionManager regionManager, final List<ProtectedRegion> chain) {
+    private static boolean applyOrder(
+        final RegionEditor editor, final List<ProtectedRegion> chain, final CommandSender actor
+    ) {
         int top = (chain.size() - 1) * PRIORITY_STEP;
         for (final ProtectedRegion region : chain) {
             top = Math.max(top, region.getPriority());
         }
+        final Map<ProtectedRegion, Integer> priorities = new LinkedHashMap<>();
         for (int i = 0; i < chain.size(); i++) {
-            chain.get(i).setPriority(top - i * PRIORITY_STEP);
+            priorities.put(chain.get(i), top - i * PRIORITY_STEP);
         }
-        regionManager.markDirty();
+        final EditResult result = editor.setPriorities(priorities, actor);
+        return result == EditResult.APPLIED || result == EditResult.UNCHANGED;
     }
 
     private static String describe(final List<ProtectedRegion> chain) {
@@ -939,13 +943,14 @@ public final class RegionCommands {
         final Player player = asPlayer(sender);
         if (player == null) return;
 
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
 
-        PriorityDialog.open(player, regionManager, (viewer, chain) -> {
-            applyOrder(regionManager, chain);
-            viewer.sendMessage(Messages.format("<green>Priority order set: <aqua><order></aqua>.",
-                Placeholder.unparsed("order", describe(chain))));
+        PriorityDialog.open(player, editor.manager(), (viewer, chain) -> {
+            if (applyOrder(editor, chain, viewer)) {
+                viewer.sendMessage(Messages.format("<green>Priority order set: <aqua><order></aqua>.",
+                    Placeholder.unparsed("order", describe(chain))));
+            }
         });
     }
 
@@ -958,38 +963,36 @@ public final class RegionCommands {
         @Argument(value = "id", suggestions = "region-ids") final String id,
         @Argument(value = "parent", suggestions = "region-ids") final @Nullable String parentId
     ) {
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
 
-        final ProtectedRegion region = regionManager.getRegion(id);
+        final ProtectedRegion region = editor.manager().getRegion(id);
         if (region == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
             return;
         }
 
         if (parentId == null) {
-            region.setParent(null);
-            regionManager.markDirty();
-            success(sender, "Cleared the parent of <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            final EditResult cleared = editor.setParent(region, null, sender.source());
+            if (cleared == EditResult.APPLIED || cleared == EditResult.UNCHANGED) {
+                success(sender, "Cleared the parent of <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            }
             return;
         }
 
-        final ProtectedRegion parent = regionManager.getRegion(parentId);
+        final ProtectedRegion parent = editor.manager().getRegion(parentId);
         if (parent == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", parentId));
             return;
         }
 
-        try {
-            region.setParent(parent);
-        } catch (final IllegalArgumentException _) {
-            error(sender, "That would create a circular parent relationship.");
-            return;
+        switch (editor.setParent(region, parent, sender.source())) {
+            case APPLIED, UNCHANGED -> success(sender, "Set parent of <aqua><id></aqua> to <aqua><parent></aqua>.",
+                Placeholder.unparsed("id", id), Placeholder.unparsed("parent", parentId));
+            case INVALID -> error(sender, "That would create a circular parent relationship.");
+            default -> {
+            }
         }
-
-        regionManager.markDirty();
-        success(sender, "Set parent of <aqua><id></aqua> to <aqua><parent></aqua>.",
-            Placeholder.unparsed("id", id), Placeholder.unparsed("parent", parentId));
     }
 
     @Command("uworldguard|uwg|worldguard|wg removeparent|unsetparent <id>")
@@ -999,23 +1002,21 @@ public final class RegionCommands {
         final Source sender,
         @Argument(value = "id", suggestions = "region-ids") final String id
     ) {
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
 
-        final ProtectedRegion region = regionManager.getRegion(id);
+        final ProtectedRegion region = editor.manager().getRegion(id);
         if (region == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
             return;
         }
 
-        if (region.getParent() == null) {
-            error(sender, "Region <aqua><id></aqua> has no parent.", Placeholder.unparsed("id", id));
-            return;
+        switch (editor.setParent(region, null, sender.source())) {
+            case APPLIED -> success(sender, "Cleared the parent of <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            case UNCHANGED -> error(sender, "Region <aqua><id></aqua> has no parent.", Placeholder.unparsed("id", id));
+            default -> {
+            }
         }
-
-        region.setParent(null);
-        regionManager.markDirty();
-        success(sender, "Cleared the parent of <aqua><id></aqua>.", Placeholder.unparsed("id", id));
     }
 
     @Command("uworldguard|uwg|worldguard|wg menu")
@@ -1073,7 +1074,7 @@ public final class RegionCommands {
             return;
         }
 
-        new FlagMenu(regionManager, region, chatInput).open(player);
+        new FlagMenu(player.getWorld(), regionManager, region, chatInput).open(player);
     }
 
     @Command("uworldguard|uwg|worldguard|wg owner add <id> <player>")
@@ -1127,14 +1128,16 @@ public final class RegionCommands {
     private void member(
         final Source sender, final String id, final String playerName, final boolean owner, final boolean add
     ) {
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
 
-        final ProtectedRegion region = regionManager.getRegion(id);
+        final ProtectedRegion region = editor.manager().getRegion(id);
         if (region == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
             return;
         }
+        final RegionMembershipChangeEvent.Role role =
+            owner ? RegionMembershipChangeEvent.Role.OWNER : RegionMembershipChangeEvent.Role.MEMBER;
 
         plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
             final OfflinePlayer target = Bukkit.getOfflinePlayer(playerName);
@@ -1143,24 +1146,20 @@ public final class RegionCommands {
                     Placeholder.unparsed("player", playerName));
                 return;
             }
-            if (regionManager.getRegion(id) != region) {
-                error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
-                return;
-            }
             final UUID uuid = target.getUniqueId();
-            final DefaultDomain domain = owner ? region.getOwners() : region.getMembers();
-            if (add) {
-                domain.addPlayer(uuid);
-            } else {
-                domain.removePlayer(uuid);
+            final EditResult result = add
+                ? editor.addPlayer(region, role, uuid, sender.source())
+                : editor.removePlayer(region, role, uuid, sender.source());
+            switch (result) {
+                case APPLIED, UNCHANGED -> success(sender, (add ? "Added " : "Removed ") + "<aqua><player></aqua> "
+                        + (add ? "to" : "from") + " " + (owner ? "owners" : "members")
+                        + " of <aqua><id></aqua>.",
+                    Placeholder.unparsed("player", playerName),
+                    Placeholder.unparsed("id", id));
+                case NOT_FOUND -> error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+                default -> {
+                }
             }
-
-            regionManager.markDirty();
-            success(sender, (add ? "Added " : "Removed ") + "<aqua><player></aqua> "
-                    + (add ? "to" : "from") + " " + (owner ? "owners" : "members")
-                    + " of <aqua><id></aqua>.",
-                Placeholder.unparsed("player", playerName),
-                Placeholder.unparsed("id", id));
         });
     }
 
@@ -1241,14 +1240,32 @@ public final class RegionCommands {
         return List.of();
     }
 
-    private static <T> boolean applyFlag(
-        final ProtectedRegion region, final Flag<T> flag, final String value, final @Nullable Player setter
+    /**
+     * Stores a value parsed from a {@code Flag<?>}, whose type the command line cannot know. The
+     * parse came from that same flag, so the cast holds. {@code group} of {@code null} keeps the
+     * group the flag already had.
+     */
+    @SuppressWarnings("unchecked")
+    private static EditResult storeFlag(
+        final RegionEditor editor, final ProtectedRegion region, final Flag<?> flag, final Object value,
+        final @Nullable RegionGroup group, final CommandSender actor
     ) {
-        final T parsed = flag.parse(value, setter);
-        if (parsed == null) return false;
+        final Flag<Object> typed = (Flag<Object>) flag;
+        return group == null
+            ? editor.setFlag(region, typed, value, actor)
+            : editor.setFlag(region, typed, value, group, actor);
+    }
 
-        region.setFlag(flag, parsed);
-        return true;
+    /**
+     * The editor for the sender's world, reporting why there is none the same way
+     * {@link #managerFor} does.
+     */
+    private @Nullable RegionEditor editorFor(final Source sender) {
+        final RegionManager regionManager = managerFor(sender);
+        if (regionManager == null) {
+            return null;
+        }
+        return new RegionEditorImpl(((Player) sender.source()).getWorld(), regionManager);
     }
 
     private @Nullable RegionManager managerFor(final Source sender) {

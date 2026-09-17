@@ -12,7 +12,6 @@ packetevents = "2.7.0"
 worldedit = "7.3.8"
 placeholderapi = "2.11.6"
 invui = "2.2.0"
-caffeine = "3.1.8"
 bstats = "3.2.1"
 junit = "5.11.4"
 vanniktech-publish = "0.37.0"
@@ -25,7 +24,6 @@ worldedit-bukkit = { module = "com.sk89q.worldedit:worldedit-bukkit", version.re
 worldedit-core = { module = "com.sk89q.worldedit:worldedit-core", version.ref = "worldedit" }
 placeholderapi = { module = "me.clip:placeholderapi", version.ref = "placeholderapi" }
 invui = { module = "xyz.xenondevs.invui:invui", version.ref = "invui" }
-caffeine = { module = "com.github.ben-manes.caffeine:caffeine", version.ref = "caffeine" }
 bstats-bukkit = { module = "org.bstats:bstats-bukkit", version.ref = "bstats" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 

@@ -15,7 +15,6 @@ dependencies {
 
     compileOnly(libs.worldedit.bukkit) { isTransitive = false }
     compileOnly(libs.worldedit.core) { isTransitive = false }
-    compileOnly(libs.caffeine)
 }
 
 java {

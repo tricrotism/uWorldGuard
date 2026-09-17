@@ -13,6 +13,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.potion.PotionEffect;
@@ -22,6 +23,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Applies the once-a-second player flags: heal-amount / heal-min-health / heal-max-health, and
@@ -29,10 +31,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * and each resolving that player's regions; merging them halves the scheduler churn and does one
  * region lookup per player per second instead of two.
  *
- * <p>Folia-correct: a global repeating task fans each player out to that player's own entity
- * scheduler, so health and potion API are only ever touched on the entity's region thread. Region
- * flag reads go through the thread-safe {@link RegionQuery}. The whole tick is skipped when no region
- * on the server uses any of these flags, and each half is skipped per-world via
+ * <p>Folia-correct: each player carries their own repeating task on their own entity scheduler, so
+ * health and potion API are only ever touched on the entity's region thread. Region flag reads go
+ * through the thread-safe {@link RegionQuery}. The tick is skipped when no region on the server uses
+ * any of these flags, and each half is skipped per-world via
  * {@link ApplicableRegionSet#worldUses} — except that a player still holding effects this service
  * granted keeps ticking the effect half until they are stripped.
  */
@@ -45,8 +47,7 @@ public final class PlayerTickService implements Listener {
     private final RegionContainerImpl container;
     private final RegionQuery query;
     private final Map<UUID, Set<PotionEffectType>> granted = new ConcurrentHashMap<>();
-    private long seconds;
-    private volatile @Nullable ScheduledTask task;
+    private final Map<UUID, ScheduledTask> tasks = new ConcurrentHashMap<>();
 
     public PlayerTickService(final Plugin plugin, final RegionContainerImpl container, final RegionQuery query) {
         this.plugin = plugin;
@@ -55,7 +56,24 @@ public final class PlayerTickService implements Listener {
     }
 
     public void start() {
-        task = plugin.getServer().getGlobalRegionScheduler().runAtFixedRate(plugin, _ -> {
+        for (final Player player : plugin.getServer().getOnlinePlayers()) {
+            startTick(player);
+        }
+    }
+
+    /**
+     * Schedules {@code player}'s tick, replacing any they already had.
+     *
+     * <p>One repeating task per player on their own entity scheduler, rather than a global task that
+     * scheduled one entity task per player per second: that shape allocated and queued a task object
+     * for every player every second, through the one thread the whole server shares, to do work that
+     * only ever touches one player.
+     */
+    private void startTick(final Player player) {
+        final UUID uuid = player.getUniqueId();
+        stopTick(uuid);
+        final AtomicLong seconds = new AtomicLong();
+        final ScheduledTask scheduled = player.getScheduler().runAtFixedRate(plugin, _ -> {
             final boolean sessions = SessionDispatch.ACTIVE;
             if (!sessions
                 && !container.anyRegionUses(Flags.HEAL_AMOUNT)
@@ -66,35 +84,48 @@ public final class PlayerTickService implements Listener {
                 && !container.anyRegionUses(Flags.BLOCKED_EFFECTS)) {
                 return;
             }
-            final long tick = ++seconds;
-            for (final Player player : plugin.getServer().getOnlinePlayers()) {
-                player.getScheduler().run(plugin, t -> apply(player, tick, sessions), null);
-            }
-        }, 20L, 20L);
+            apply(player, seconds.incrementAndGet(), sessions);
+        }, null, 20L, 20L);
+        if (scheduled != null) {
+            tasks.put(uuid, scheduled);
+        }
+    }
+
+    private void stopTick(final UUID uuid) {
+        final ScheduledTask existing = tasks.remove(uuid);
+        if (existing != null) {
+            existing.cancel();
+        }
     }
 
     /**
-     * Cancels the tick. Paper drops a plugin's tasks on disable anyway, but holding the handle means
-     * the service can be stopped without one — and matches the poll and the autosave, which hold
-     * theirs so a reload can retune them.
+     * Cancels every tick. Paper drops a plugin's tasks on disable anyway, but holding the handles
+     * means the service can be stopped without one — and matches the movement poll and the autosave,
+     * which hold theirs so a reload can retune them.
      */
     public void stop() {
-        final ScheduledTask running = task;
-        if (running != null) {
+        for (final ScheduledTask running : tasks.values()) {
             running.cancel();
-            task = null;
         }
+        tasks.clear();
         granted.clear();
+    }
+
+    @EventHandler
+    public void onJoin(final PlayerJoinEvent event) {
+        startTick(event.getPlayer());
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(final PlayerQuitEvent event) {
-        granted.remove(event.getPlayer().getUniqueId());
+        final UUID uuid = event.getPlayer().getUniqueId();
+        stopTick(uuid);
+        granted.remove(uuid);
     }
 
     /**
-     * WorldGuard session handlers tick here rather than on their own task: this one already fans out
-     * to every player's entity scheduler once a second, which is the granularity WorldGuard's own
+     * WorldGuard session handlers tick here rather than on their own task: this one already runs on
+     * every player's entity scheduler once a second, which is the granularity WorldGuard's own
      * tick-driven handlers work at.
      */
     private void apply(final Player player, final long tick, final boolean sessions) {

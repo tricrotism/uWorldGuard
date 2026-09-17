@@ -23,11 +23,10 @@ dependencies {
 
     implementation(libs.bstats.bukkit)
 
-    // Cloud + Caffeine — downloaded at boot by the PluginLoader (UWorldGuardLoader), not shaded.
+    // Cloud — downloaded at boot by the PluginLoader (UWorldGuardLoader), not shaded.
     compileOnly(libs.cloud.paper)
     compileOnly(libs.cloud.annotations)
     annotationProcessor(libs.cloud.annotations)
-    compileOnly(libs.caffeine)
 
     // PacketEvents — provided by the server plugin at runtime.
     compileOnly(libs.packetevents.spigot)

@@ -157,6 +157,23 @@ public final class FlagBridge {
     }
 
     /**
+     * Drops what the shim holds for a released third-party flag: the mapping from its engine name to
+     * the consumer's flag object, and the WorldGuard registry's entry. Both reference classes of the
+     * plugin being unloaded, and the registry entry alone would make its next registration a
+     * conflict. A flag that did not come through the WorldGuard API is left alone.
+     */
+    public static void releaseConsumerFlag(final Flag<?> engineFlag) {
+        if (!(engineFlag instanceof BridgedConsumerFlag<?>)) {
+            return;
+        }
+        SHIM_BY_ENGINE_NAME.remove(engineFlag.getName());
+        if (com.sk89q.worldguard.WorldGuard.getInstance().getFlagRegistry()
+            instanceof com.sk89q.worldguard.protection.flags.registry.SimpleFlagRegistry registry) {
+            registry.uwgForget(engineFlag.getName());
+        }
+    }
+
+    /**
      * Whether the engine flag under this name came from a third-party registration rather than
      * uWorldGuard itself. Two plugins claiming one name is a real conflict; a plugin claiming a name
      * uWorldGuard already implements is not.
@@ -196,7 +213,7 @@ public final class FlagBridge {
             return;
         }
         try {
-            com.tricrotism.uworldguard.flags.Flags.register(FlagCategory.PROTECTION, flag);
+            com.tricrotism.uworldguard.flags.Flags.registerInternal(FlagCategory.PROTECTION, flag);
         } catch (final IllegalStateException raced) {
             // Another thread registered it first; the existing flag is equivalent.
         }
