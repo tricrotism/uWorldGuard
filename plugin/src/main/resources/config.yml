@@ -130,8 +130,8 @@ regions:
 # Left empty, uWorldGuard publishes the WorldGuard API level it implements in place of its own
 # version, which satisfies those checks. The plugins that read it are the common case, and the
 # failure is quiet: PvPManager drops its whole region integration and says only that a hook failed to
-# load. There is one version field per plugin, so this is all-or-nothing: /version and bStats report
-# it too. The update checker does not, it uses the real version.
+# load. There is one version field per plugin, so this is all-or-nothing: /version reports it too.
+# The update checker and bStats do not, they use the real version.
 #
 # Set "none" to publish uWorldGuard's own version instead, or a version of your own, which should be
 # a real WorldGuard release rather than an invented number.

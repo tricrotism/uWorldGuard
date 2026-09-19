@@ -25,6 +25,10 @@ import java.util.List;
  * offset arithmetically rather than via {@code getRelative}, which would allocate a {@link Block} per
  * moved block. The whole handler exits on a single bitset test when no region in the world uses the
  * flag, so servers that do not set it pay nothing.
+ *
+ * <p>In a straight push each block's destination is the next block's source, so the position last
+ * checked is remembered and that repeat is skipped: a ten-block push costs eleven queries rather
+ * than twenty.
  */
 @NullMarked
 public final class PistonListener implements Listener {
@@ -60,24 +64,33 @@ public final class PistonListener implements Listener {
     private boolean denied(
         final Block piston, final List<Block> moved, final int dx, final int dy, final int dz
     ) {
-        final ApplicableRegionSet atPiston = query.getApplicableRegions(piston);
-        if (!atPiston.worldUses(Flags.PISTONS)) {
+        final World world = piston.getWorld();
+        if (!query.usesFlag(world, Flags.PISTONS)) {
             return false;
         }
+        final ApplicableRegionSet atPiston = query.getApplicableRegions(piston);
         if (!atPiston.testState(Flags.PISTONS)) {
             return true;
         }
-        final World world = piston.getWorld();
+        int lastX = Integer.MIN_VALUE;
+        int lastY = Integer.MIN_VALUE;
+        int lastZ = Integer.MIN_VALUE;
         for (int i = 0, n = moved.size(); i < n; i++) {
             final Block block = moved.get(i);
-            if (!query.getApplicableRegions(world, block.getX(), block.getY(), block.getZ())
-                .testState(Flags.PISTONS)) {
+            final int x = block.getX();
+            final int y = block.getY();
+            final int z = block.getZ();
+            if ((x != lastX || y != lastY || z != lastZ)
+                && !query.getApplicableRegions(world, x, y, z).testState(Flags.PISTONS)) {
                 return true;
             }
-            if ((dx | dy | dz) != 0
-                && !query.getApplicableRegions(world, block.getX() + dx, block.getY() + dy, block.getZ() + dz)
-                .testState(Flags.PISTONS)) {
-                return true;
+            if ((dx | dy | dz) != 0) {
+                lastX = x + dx;
+                lastY = y + dy;
+                lastZ = z + dz;
+                if (!query.getApplicableRegions(world, lastX, lastY, lastZ).testState(Flags.PISTONS)) {
+                    return true;
+                }
             }
         }
         return false;

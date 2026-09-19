@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.LongAdder;
 @NullMarked
 public final class CompatCommands {
 
-    @Command("uworldguard|uwg|worldguard|wg compat")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg compat")
     @CommandDescription("WorldGuard API compatibility diagnostics")
     @Permission("uworldguard.compat")
     public void compat(final Source sender) {

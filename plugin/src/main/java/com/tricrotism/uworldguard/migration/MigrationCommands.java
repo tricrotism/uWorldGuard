@@ -42,7 +42,7 @@ public final class MigrationCommands {
         this.importer = new WorldGuardImporter(plugin.getDataFolder().getParentFile());
     }
 
-    @Command("uworldguard|uwg|worldguard|wg migrate worldguard")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg migrate worldguard")
     @CommandDescription("Import regions from an existing WorldGuard installation")
     @Permission("uworldguard.admin.migrate")
     public void migrate(final Source sender, @Flag(value = "overwrite", aliases = "o") final boolean overwrite) {

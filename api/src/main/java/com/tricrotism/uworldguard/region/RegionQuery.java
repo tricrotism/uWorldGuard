@@ -41,6 +41,22 @@ public final class RegionQuery {
         return manager.getApplicableRegions(x, y, z);
     }
 
+    /**
+     * Whether any region in {@code world} sets {@code flag} — one map lookup and a bitset test, with
+     * no position involved. A {@code false} guarantees every query for that flag in that world
+     * resolves to the flag's default, because the global region and every parent are themselves
+     * regions in that world's manager.
+     *
+     * <p>This is the gate for handlers on high-frequency events. A listener enforcing a flag that
+     * defaults to {@code ALLOW} does nothing when nobody has set it, so testing this first lets the
+     * event return before a region set is resolved or allocated. Do not gate on it for a flag whose
+     * default is {@code DENY} — there the unset case is the one that acts.
+     */
+    public boolean usesFlag(final World world, final Flag<?> flag) {
+        final RegionManager manager = container.get(world);
+        return manager != null && manager.anyRegionUses(flag);
+    }
+
     public ApplicableRegionSet getApplicableRegions(final Location location) {
         return getApplicableRegions(location.getWorld(),
             location.getBlockX(), location.getBlockY(), location.getBlockZ());

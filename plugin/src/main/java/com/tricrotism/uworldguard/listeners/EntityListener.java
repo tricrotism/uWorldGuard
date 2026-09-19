@@ -10,6 +10,7 @@ import com.tricrotism.uworldguard.flags.StateFlag;
 import com.tricrotism.uworldguard.region.ApplicableRegionSet;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
 import com.tricrotism.uworldguard.region.RegionQuery;
+import org.bukkit.World;
 import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -47,14 +48,17 @@ public final class EntityListener implements Listener {
         final CreatureSpawnEvent.SpawnReason reason = event.getSpawnReason();
         final boolean natural = isNaturalSpawn(reason);
         final boolean copperGolem = reason == CreatureSpawnEvent.SpawnReason.BUILD_COPPERGOLEM;
-        if (!natural && !copperGolem && !container.anyRegionUses(Flags.DENY_SPAWN)) {
+        final World world = event.getEntity().getWorld();
+        final boolean denySpawn = query.usesFlag(world, Flags.DENY_SPAWN);
+        if (!denySpawn
+            && !(natural && query.usesFlag(world, Flags.MOB_SPAWNING))
+            && !(copperGolem && query.usesFlag(world, Flags.COPPER_GOLEM))) {
             return;
         }
 
         final ApplicableRegionSet set = query.getApplicableRegions(event.getEntity());
 
-        if (set.worldUses(Flags.DENY_SPAWN)
-            && set.flagSetContains(Flags.DENY_SPAWN, event.getEntityType())) {
+        if (denySpawn && set.flagSetContains(Flags.DENY_SPAWN, event.getEntityType())) {
             event.setCancelled(true);
             return;
         }
@@ -80,6 +84,9 @@ public final class EntityListener implements Listener {
             return;
         }
         final StateFlag flag = explosionFlag(event.getEntity());
+        if (!query.usesFlag(event.getEntity().getWorld(), flag)) {
+            return;
+        }
 
         event.blockList().removeIf(block -> !query.testState(block, flag));
     }
@@ -94,7 +101,10 @@ public final class EntityListener implements Listener {
             return;
         }
         final StateFlag flag = griefFlag(event.getEntity());
-        if (flag != null && !query.testState(event.getBlock(), flag)) {
+        if (flag == null || !query.usesFlag(event.getBlock().getWorld(), flag)) {
+            return;
+        }
+        if (!query.testState(event.getBlock(), flag)) {
             event.setCancelled(true);
         }
     }
@@ -108,7 +118,8 @@ public final class EntityListener implements Listener {
         if (EventGate.disabled(event)) {
             return;
         }
-        if (!query.testState(event.getLightning(), Flags.LIGHTNING)) {
+        if (query.usesFlag(event.getWorld(), Flags.LIGHTNING)
+            && !query.testState(event.getLightning(), Flags.LIGHTNING)) {
             event.setCancelled(true);
         }
     }
@@ -143,7 +154,9 @@ public final class EntityListener implements Listener {
         if (EventGate.disabled(event)) {
             return;
         }
-        if (!query.testState(event.getAreaEffectCloud(), Flags.POTION_SPLASH)) {
+        final AreaEffectCloud cloud = event.getAreaEffectCloud();
+        if (query.usesFlag(cloud.getWorld(), Flags.POTION_SPLASH)
+            && !query.testState(cloud, Flags.POTION_SPLASH)) {
             event.setCancelled(true);
         }
     }
@@ -157,12 +170,15 @@ public final class EntityListener implements Listener {
         final Entity damager = event.getDamager();
 
         if (victim instanceof Player && damager instanceof Mob
+            && query.usesFlag(victim.getWorld(), Flags.MOB_DAMAGE)
             && !query.testState(victim, Flags.MOB_DAMAGE)) {
             event.setCancelled(true);
             return;
         }
 
-        if (damager instanceof Firework && !query.testState(victim, Flags.FIREWORK_DAMAGE)) {
+        if (damager instanceof Firework
+            && query.usesFlag(victim.getWorld(), Flags.FIREWORK_DAMAGE)
+            && !query.testState(victim, Flags.FIREWORK_DAMAGE)) {
             event.setCancelled(true);
             return;
         }
@@ -376,11 +392,17 @@ public final class EntityListener implements Listener {
         if (event.getEntity() instanceof Player || EventGate.disabled(event)) {
             return;
         }
+        final World world = event.getEntity().getWorld();
+        final boolean mobDrops = query.usesFlag(world, Flags.MOB_DROPS);
+        final boolean expDrops = query.usesFlag(world, Flags.EXP_DROPS);
+        if (!mobDrops && !expDrops) {
+            return;
+        }
         final ApplicableRegionSet set = query.getApplicableRegions(event.getEntity());
-        if (set.worldUses(Flags.MOB_DROPS) && !set.testState(Flags.MOB_DROPS)) {
+        if (mobDrops && !set.testState(Flags.MOB_DROPS)) {
             event.getDrops().clear();
         }
-        if (set.worldUses(Flags.EXP_DROPS) && !set.testState(Flags.EXP_DROPS)) {
+        if (expDrops && !set.testState(Flags.EXP_DROPS)) {
             event.setDroppedExp(0);
         }
     }

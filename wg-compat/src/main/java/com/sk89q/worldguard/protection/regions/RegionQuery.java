@@ -25,6 +25,13 @@ import java.util.*;
  */
 public class RegionQuery {
 
+    /**
+     * Internal: the instance {@code RegionContainer.createQuery()} hands out. This class holds no
+     * state, and consumers routinely call {@code createQuery()} inside an event handler, so there is
+     * nothing to gain from a fresh object per call.
+     */
+    public static final RegionQuery UWG_SHARED = new RegionQuery();
+
     public RegionQuery() {
     }
 

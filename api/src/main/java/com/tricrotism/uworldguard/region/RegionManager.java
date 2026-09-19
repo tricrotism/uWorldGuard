@@ -59,6 +59,7 @@ public final class RegionManager {
      * inherit, so an import with {@code --overwrite} left the old values in force until a restart.
      */
     public void addRegion(final ProtectedRegion region) {
+        region.uwgOwnedBy(this);
         final ProtectedRegion replaced = regions.put(region.getId().toLowerCase(Locale.ROOT), region);
         if (region instanceof GlobalProtectedRegion g) {
             global = g;
@@ -93,6 +94,7 @@ public final class RegionManager {
         if (existing != null) {
             return existing;
         }
+        region.uwgOwnedBy(this);
         if (region instanceof GlobalProtectedRegion g) {
             global = g;
         }
@@ -114,6 +116,7 @@ public final class RegionManager {
      * redefine of the same id cannot interleave with it.
      */
     public @Nullable ProtectedRegion redefineRegion(final ProtectedRegion replacement) {
+        replacement.uwgOwnedBy(this);
         final ProtectedRegion[] previous = new ProtectedRegion[1];
         regions.computeIfPresent(
             replacement.getId().toLowerCase(Locale.ROOT),
@@ -147,6 +150,7 @@ public final class RegionManager {
     public @Nullable ProtectedRegion removeRegion(final String id) {
         final ProtectedRegion removed = regions.remove(id.toLowerCase(Locale.ROOT));
         if (removed != null) {
+            removed.uwgOwnedBy(null);
             if (removed == global) {
                 global = null;
             }

@@ -20,8 +20,14 @@ public abstract class Flag<T> {
 
     /**
      * Internal bridge state. Not part of the WorldGuard API — never touch this from consumer code.
+     *
+     * <p>Volatile because a consumer's own flag is bound on whichever thread registers it, usually
+     * during that plugin's enable, and read afterwards from every region thread. The built-in flags
+     * are published by the {@code bound} flag in {@code FlagBridge}; a flag registered after that has
+     * no such barrier, and a region thread that saw the field unset read the flag as unbridged and
+     * resolved it as unset.
      */
-    private Object uwgBinding;
+    private volatile Object uwgBinding;
 
     protected Flag(final String name) {
         this(name, null);

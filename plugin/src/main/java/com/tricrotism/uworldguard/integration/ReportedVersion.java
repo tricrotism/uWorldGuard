@@ -34,7 +34,7 @@ public final class ReportedVersion {
     /**
      * uWorldGuard's real version, whatever it publishes to other plugins. Anything uWorldGuard says
      * about itself uses this, so a published version never reaches a place where the operator is
-     * being told about uWorldGuard. That covers its own log lines and its update check.
+     * being told about uWorldGuard. That covers its own log lines, its update check and bStats.
      */
     public static String real(final org.bukkit.plugin.Plugin plugin) {
         final String captured = real;
@@ -65,7 +65,7 @@ public final class ReportedVersion {
         }
         real = actual;
         log.info("Reporting version " + version + " to other plugins (real version: " + actual
-            + "). This is compatibility.report-version. /version and metrics report it too.");
+            + "). This is compatibility.report-version. /version reports it too.");
     }
 
     /**

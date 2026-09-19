@@ -166,13 +166,19 @@ public final class ApplicableRegionSet {
      * region means protected (deny).
      */
     public boolean canBuild(final @Nullable UUID subject) {
+        final boolean passthrough = worldUsesOrUnknown(Flags.PASSTHROUGH);
+        final boolean buildFlag = worldUsesOrUnknown(Flags.BUILD);
         ProtectedRegion top = null;
-        for (int i = 0, n = applicable.size(); i < n; i++) {
-            final ProtectedRegion region = applicable.get(i);
-            if (region.getFlag(Flags.PASSTHROUGH) != State.ALLOW) {
-                top = region;
-                break;
+        if (passthrough) {
+            for (int i = 0, n = applicable.size(); i < n; i++) {
+                final ProtectedRegion region = applicable.get(i);
+                if (region.getFlag(Flags.PASSTHROUGH) != State.ALLOW) {
+                    top = region;
+                    break;
+                }
             }
+        } else if (!applicable.isEmpty()) {
+            top = applicable.getFirst();
         }
 
         if (top == null) {
@@ -185,15 +191,17 @@ public final class ApplicableRegionSet {
         boolean memberOfTop = false;
         for (int i = 0, n = applicable.size(); i < n; i++) {
             final ProtectedRegion region = applicable.get(i);
-            if (region.getFlag(Flags.PASSTHROUGH) == State.ALLOW) {
+            if (passthrough && region.getFlag(Flags.PASSTHROUGH) == State.ALLOW) {
                 continue;
             }
             if (region.getPriority() != topPriority) {
                 break;
             }
-            final State v = appliesTo(region, Flags.BUILD, subject) ? region.getFlag(Flags.BUILD) : null;
-            if (v != null) {
-                explicit = explicit == State.DENY ? State.DENY : v;
+            if (buildFlag) {
+                final State v = appliesTo(region, Flags.BUILD, subject) ? region.getFlag(Flags.BUILD) : null;
+                if (v != null) {
+                    explicit = explicit == State.DENY ? State.DENY : v;
+                }
             }
             if (subject != null && region.isMember(subject)) {
                 memberOfTop = true;
@@ -262,6 +270,9 @@ public final class ApplicableRegionSet {
      * union: a region anywhere in the stack that lists the element wins, then the global fallback).
      */
     public <E> boolean flagSetContains(final Flag<Set<E>> flag, final E element) {
+        if (!worldUsesOrUnknown(flag)) {
+            return false;
+        }
         for (int i = 0, n = applicable.size(); i < n; i++) {
             final Set<E> set = applicable.get(i).getFlag(flag);
             if (set != null && set.contains(element)) {
@@ -276,6 +287,9 @@ public final class ApplicableRegionSet {
      * Resolve a typed (non-state) flag: highest-priority region that sets it wins.
      */
     public <T> @Nullable T queryValue(final Flag<T> flag) {
+        if (!worldUsesOrUnknown(flag)) {
+            return null;
+        }
         for (int i = 0, n = applicable.size(); i < n; i++) {
             final T v = applicable.get(i).getFlag(flag);
             if (v != null) {
@@ -285,7 +299,24 @@ public final class ApplicableRegionSet {
         return global != null ? global.getFlag(flag) : null;
     }
 
+    /**
+     * Whether a region in this set's world could set {@code flag} at all. {@code true} for a set with
+     * no owning manager, where nothing can be ruled out — the compat layer builds those.
+     *
+     * <p>Resolution starts here. A flag nobody has set anywhere in the world cannot be set on an
+     * applicable region, on a parent, or on the global region, because all three live in the manager
+     * the bitset was built from. One word test then replaces a walk of the region stack and a map
+     * lookup per region, which is what every unset flag costs otherwise — and most flags are unset on
+     * most servers.
+     */
+    private boolean worldUsesOrUnknown(final Flag<?> flag) {
+        return owner == null || owner.anyRegionUses(flag);
+    }
+
     private @Nullable State resolveState(final StateFlag flag, final @Nullable UUID subject) {
+        if (!worldUsesOrUnknown(flag)) {
+            return null;
+        }
         boolean found = false;
         int bestPriority = 0;
         State result = null;

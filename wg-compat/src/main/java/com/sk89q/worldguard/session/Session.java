@@ -282,6 +282,6 @@ public class Session {
     }
 
     private static ApplicableRegionSet regionsAt(final Location location) {
-        return new RegionQuery().getApplicableRegions(location);
+        return RegionQuery.UWG_SHARED.getApplicableRegions(location);
     }
 }

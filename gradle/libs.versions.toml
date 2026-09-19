@@ -13,7 +13,8 @@ worldedit = "7.3.8"
 placeholderapi = "2.11.6"
 invui = "2.2.0"
 bstats = "3.2.1"
-junit = "5.11.4"
+junit = "6.1.3"
+mockbukkit = "4.116.1"
 vanniktech-publish = "0.37.0"
 
 [libraries]
@@ -26,6 +27,9 @@ placeholderapi = { module = "me.clip:placeholderapi", version.ref = "placeholder
 invui = { module = "xyz.xenondevs.invui:invui", version.ref = "invui" }
 bstats-bukkit = { module = "org.bstats:bstats-bukkit", version.ref = "bstats" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+mockbukkit = { module = "org.mockbukkit.mockbukkit:mockbukkit-v26.2", version.ref = "mockbukkit" }
 
 [plugins]
 paperweight-userdev = { id = "io.papermc.paperweight.userdev", version.ref = "paperweight-userdev" }

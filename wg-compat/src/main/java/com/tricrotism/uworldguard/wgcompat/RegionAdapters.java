@@ -38,6 +38,10 @@ public final class RegionAdapters {
      * makes a consumer-built region canonical, so the answer is always read back off the engine
      * region rather than taken from {@link #create} — that is the instance every other caller and
      * every racing thread will see.
+     *
+     * <p>The attach is skipped when the wrapper already names this manager. It writes a volatile
+     * field, which is a store barrier, and this runs once per region per set a consumer iterates —
+     * the attach only has to happen the first time.
      */
     public static ProtectedRegion region(
         final com.tricrotism.uworldguard.region.ProtectedRegion backing, final com.tricrotism.uworldguard.region.RegionManager manager
@@ -48,7 +52,7 @@ public final class RegionAdapters {
             create(backing);
             shim = (ProtectedRegion) backing.uwgCompatShim();
         }
-        if (manager != null) {
+        if (manager != null && shim.uwgManager() != manager) {
             shim.uwgAttach(manager);
         }
         return shim;

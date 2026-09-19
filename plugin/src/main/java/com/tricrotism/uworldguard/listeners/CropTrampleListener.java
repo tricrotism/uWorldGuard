@@ -43,13 +43,15 @@ public final class CropTrampleListener implements Listener {
             return;
         }
         final Player player = event.getPlayer();
-        if (block.getType() == Material.BIG_DRIPLEAF) {
-            if (!query.testState(block, Flags.USE_DRIPLEAF, player) && !Bypass.has(player)) {
+        final Material type = block.getType();
+        if (type == Material.BIG_DRIPLEAF) {
+            if (query.usesFlag(block.getWorld(), Flags.USE_DRIPLEAF)
+                && !query.testState(block, Flags.USE_DRIPLEAF, player) && !Bypass.has(player)) {
                 event.setCancelled(true);
             }
             return;
         }
-        if (block.getType() != Material.FARMLAND) {
+        if (type != Material.FARMLAND || !query.usesFlag(block.getWorld(), Flags.CROP_TRAMPLE)) {
             return;
         }
         if (!query.testState(block, Flags.CROP_TRAMPLE, player)) {
@@ -66,7 +68,8 @@ public final class CropTrampleListener implements Listener {
             return;
         }
         final Block block = event.getBlock();
-        if (block == null || block.getType() != Material.FARMLAND) {
+        if (block == null || block.getType() != Material.FARMLAND
+            || !query.usesFlag(block.getWorld(), Flags.CROP_TRAMPLE)) {
             return;
         }
         if (!query.testState(block, Flags.CROP_TRAMPLE)) {

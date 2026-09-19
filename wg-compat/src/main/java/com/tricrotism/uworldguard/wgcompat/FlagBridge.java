@@ -126,8 +126,25 @@ public final class FlagBridge {
         return shimGroup == null ? RegionGroup.ALL : RegionGroup.valueOf(((Enum<?>) shimGroup).name());
     }
 
+    /**
+     * The two enums declare their constants in different orders, so this is a table rather than an
+     * ordinal cast — and a table rather than {@code valueOf}, which hashes a string into the enum's
+     * constant directory on a path that runs once per region per flag.
+     */
+    private static final com.sk89q.worldguard.protection.flags.RegionGroup[] SHIM_GROUPS = shimGroups();
+
+    private static com.sk89q.worldguard.protection.flags.RegionGroup[] shimGroups() {
+        final RegionGroup[] engine = RegionGroup.values();
+        final com.sk89q.worldguard.protection.flags.RegionGroup[] shim =
+            new com.sk89q.worldguard.protection.flags.RegionGroup[engine.length];
+        for (int i = 0; i < engine.length; i++) {
+            shim[i] = com.sk89q.worldguard.protection.flags.RegionGroup.valueOf(engine[i].name());
+        }
+        return shim;
+    }
+
     public static Object toShimGroup(final RegionGroup group) {
-        return com.sk89q.worldguard.protection.flags.RegionGroup.valueOf(group.name());
+        return SHIM_GROUPS[group.ordinal()];
     }
 
     /**

@@ -10,6 +10,7 @@ import com.tricrotism.uworldguard.text.MessageService;
 import com.tricrotism.uworldguard.wgcompat.SessionDispatch;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.Container;
 import org.bukkit.entity.Player;
@@ -207,7 +208,8 @@ public final class PlayerStateListener implements Listener {
         if (reason != RegainReason.REGEN && reason != RegainReason.SATIATED) {
             return;
         }
-        if (!query.testState(player, Flags.NATURAL_HEALTH_REGEN)) {
+        if (query.usesFlag(player.getWorld(), Flags.NATURAL_HEALTH_REGEN)
+            && !query.testState(player, Flags.NATURAL_HEALTH_REGEN)) {
             event.setCancelled(true);
         }
     }
@@ -226,7 +228,8 @@ public final class PlayerStateListener implements Listener {
         if (event.getFoodLevel() >= player.getFoodLevel()) {
             return;
         }
-        if (!query.testState(player, Flags.NATURAL_HUNGER_DRAIN)) {
+        if (query.usesFlag(player.getWorld(), Flags.NATURAL_HUNGER_DRAIN)
+            && !query.testState(player, Flags.NATURAL_HUNGER_DRAIN)) {
             event.setCancelled(true);
         }
     }
@@ -253,14 +256,21 @@ public final class PlayerStateListener implements Listener {
         if (!(event.getEntity() instanceof Player player) || EventGate.disabled(event)) {
             return;
         }
+        final World world = player.getWorld();
+        final boolean invincibility =
+            query.usesFlag(world, Flags.INVINCIBLE) || query.usesFlag(world, Flags.GODMODE);
+        final boolean fall = event.getCause() == EntityDamageEvent.DamageCause.FALL
+            && query.usesFlag(world, Flags.FALL_DAMAGE);
+        if (!invincibility && !fall) {
+            return;
+        }
         final ApplicableRegionSet set = query.getApplicableRegions(player);
-        if (Boolean.TRUE.equals(set.queryValue(Flags.INVINCIBLE))
-            || Boolean.TRUE.equals(set.queryValue(Flags.GODMODE))) {
+        if (invincibility && (Boolean.TRUE.equals(set.queryValue(Flags.INVINCIBLE))
+            || Boolean.TRUE.equals(set.queryValue(Flags.GODMODE)))) {
             event.setCancelled(true);
             return;
         }
-        if (event.getCause() == EntityDamageEvent.DamageCause.FALL
-            && !set.testState(Flags.FALL_DAMAGE, player.getUniqueId())) {
+        if (fall && !set.testState(Flags.FALL_DAMAGE, player.getUniqueId())) {
             event.setCancelled(true);
         }
     }
@@ -271,6 +281,9 @@ public final class PlayerStateListener implements Listener {
             return;
         }
         final Player player = event.getPlayer();
+        if (!query.usesFlag(player.getWorld(), Flags.ITEM_DURABILITY)) {
+            return;
+        }
         if (!query.testState(player, Flags.ITEM_DURABILITY)) {
             if (Bypass.has(player)) {
                 return;

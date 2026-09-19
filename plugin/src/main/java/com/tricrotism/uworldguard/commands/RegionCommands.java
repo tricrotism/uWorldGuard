@@ -139,7 +139,7 @@ public final class RegionCommands {
      * every command at once put two dozen lines of syntax on screen before a player knew which of
      * them they wanted, and the useful ones scrolled away with the rest.
      */
-    @Command("uworldguard|uwg|worldguard|wg")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg")
     @CommandDescription("Show what uWorldGuard can do")
     public void help(final Source sender) {
         final Map<String, List<Component>> sections = visibleCommands(sender);
@@ -175,7 +175,7 @@ public final class RegionCommands {
     /**
      * One section's commands, or every one of them for {@code all}.
      */
-    @Command("uworldguard|uwg|worldguard|wg help [section]")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg help [section]")
     @CommandDescription("Show the commands in one section, or all of them")
     public void helpSection(
         final Source sender,
@@ -264,14 +264,14 @@ public final class RegionCommands {
         return sections;
     }
 
-    @Command("uworldguard|uwg|worldguard|wg define <id>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define <id>")
     @CommandDescription("Define a region from your selection, cuboid or polygon")
     @Permission("uworldguard.region.define")
     public void define(final Source sender, @Argument("id") final String id) {
         fromSelection(sender, id, false);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg redefine <id>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine <id>")
     @CommandDescription("Reshape a region to your selection, keeping its flags, members and priority")
     @Permission("uworldguard.region.redefine")
     public void redefine(
@@ -315,8 +315,8 @@ public final class RegionCommands {
         }
     }
 
-    @Command("uworldguard|uwg|worldguard|wg define <id> cylinder <radiusX> <radiusZ> <minY> <maxY>")
-    @Command("uworldguard|uwg|worldguard|wg define-cylinder <id> <radiusX> <radiusZ> <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define <id> cylinder <radiusX> <radiusZ> <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define-cylinder <id> <radiusX> <radiusZ> <minY> <maxY>")
     @CommandDescription("Define a cylinder region at your location")
     @Permission("uworldguard.region.define")
     public void defineCylinder(
@@ -330,8 +330,8 @@ public final class RegionCommands {
         cylinder(sender, id, radiusX, radiusZ, minY, maxY, false);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg redefine <id> cylinder <radiusX> <radiusZ> <minY> <maxY>")
-    @Command("uworldguard|uwg|worldguard|wg redefine-cylinder <id> <radiusX> <radiusZ> <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine <id> cylinder <radiusX> <radiusZ> <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine-cylinder <id> <radiusX> <radiusZ> <minY> <maxY>")
     @CommandDescription("Reshape a region into a cylinder at your location, keeping its settings")
     @Permission("uworldguard.region.redefine")
     public void redefineCylinder(
@@ -367,8 +367,8 @@ public final class RegionCommands {
         }
     }
 
-    @Command("uworldguard|uwg|worldguard|wg define <id> sphere <radiusX> <radiusY> <radiusZ>")
-    @Command("uworldguard|uwg|worldguard|wg define-sphere <id> <radiusX> <radiusY> <radiusZ>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define <id> sphere <radiusX> <radiusY> <radiusZ>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define-sphere <id> <radiusX> <radiusY> <radiusZ>")
     @CommandDescription("Define a sphere region at your location")
     @Permission("uworldguard.region.define")
     public void defineSphere(
@@ -381,8 +381,8 @@ public final class RegionCommands {
         sphere(sender, id, radiusX, radiusY, radiusZ, false);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg redefine <id> sphere <radiusX> <radiusY> <radiusZ>")
-    @Command("uworldguard|uwg|worldguard|wg redefine-sphere <id> <radiusX> <radiusY> <radiusZ>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine <id> sphere <radiusX> <radiusY> <radiusZ>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine-sphere <id> <radiusX> <radiusY> <radiusZ>")
     @CommandDescription("Reshape a region into a sphere at your location, keeping its settings")
     @Permission("uworldguard.region.redefine")
     public void redefineSphere(
@@ -417,8 +417,8 @@ public final class RegionCommands {
         }
     }
 
-    @Command("uworldguard|uwg|worldguard|wg define <id> polygon <minY> <maxY>")
-    @Command("uworldguard|uwg|worldguard|wg define-polygon <id> <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define <id> polygon <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define-polygon <id> <minY> <maxY>")
     @CommandDescription("Define a polygon region from your WorldEdit selection")
     @Permission("uworldguard.region.define")
     public void definePolygon(
@@ -430,8 +430,8 @@ public final class RegionCommands {
         polygon(sender, id, minY, maxY, false);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg redefine <id> polygon <minY> <maxY>")
-    @Command("uworldguard|uwg|worldguard|wg redefine-polygon <id> <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine <id> polygon <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine-polygon <id> <minY> <maxY>")
     @CommandDescription("Reshape a region to your WorldEdit polygon, keeping its settings")
     @Permission("uworldguard.region.redefine")
     public void redefinePolygon(
@@ -505,7 +505,7 @@ public final class RegionCommands {
         }
     }
 
-    @Command("uworldguard|uwg|worldguard|wg remove <id>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg remove <id>")
     @CommandDescription("Remove a region")
     @Permission("uworldguard.region.remove")
     public void remove(final Source sender, @Argument(value = "id", suggestions = "region-ids") final String id) {
@@ -526,7 +526,7 @@ public final class RegionCommands {
      */
     private static final int PAGE_SIZE = 8;
 
-    @Command("uworldguard|uwg|worldguard|wg list [page]")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg list [page]")
     @CommandDescription("List regions in this world, a page at a time")
     @Permission("uworldguard.region.list")
     public void list(final Source sender, @Argument("page") final @Nullable Integer pageArg) {
@@ -597,7 +597,7 @@ public final class RegionCommands {
         return sender.source() instanceof Player player ? player.getWorld().getName() : "this world";
     }
 
-    @Command("uworldguard|uwg|worldguard|wg here")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg here")
     @CommandDescription("Show the regions you are standing in")
     @Permission("uworldguard.region.info")
     public void here(final Source sender) {
@@ -637,7 +637,7 @@ public final class RegionCommands {
         sender.source().sendMessage(message);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg bypass")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg bypass")
     @CommandDescription("Toggle your own region bypass off or on")
     @Permission(Bypass.NODE)
     public void bypass(final Source sender) {
@@ -658,7 +658,7 @@ public final class RegionCommands {
      * usable for a small correction: overshooting a region by a block otherwise means placing both
      * corners again by hand, when the region already knows where they are.
      */
-    @Command("uworldguard|uwg|worldguard|wg select <id>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg select <id>")
     @CommandDescription("Set your selection to a region's bounds")
     @Permission("uworldguard.region.select")
     public void select(final Source sender, @Argument(value = "id", suggestions = "region-ids") final String id) {
@@ -690,7 +690,7 @@ public final class RegionCommands {
                 + (max.y() - min.y() + 1) + "x" + (max.z() - min.z() + 1)));
     }
 
-    @Command("uworldguard|uwg|worldguard|wg info <id>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg info <id>")
     @CommandDescription("Show details about a region")
     @Permission("uworldguard.region.info")
     public void info(final Source sender, @Argument(value = "id", suggestions = "region-ids") final String id) {
@@ -731,7 +731,7 @@ public final class RegionCommands {
         sender.source().sendMessage(card);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg flag <id> <flag> [value]")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg flag <id> <flag> [value]")
     @CommandDescription("Set or clear a flag on a region (-g to limit who it applies to)")
     @Permission("uworldguard.region.flag")
     public void flag(
@@ -826,7 +826,7 @@ public final class RegionCommands {
      * arguments were typed: two commands under {@code priority} taking a variable first argument are
      * an ambiguous node, and the plugin refuses to enable.
      */
-    @Command("uworldguard|uwg|worldguard|wg priority <id> [priority]")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg priority <id> [priority]")
     @CommandDescription("Set a region's priority, or order regions with shop>spawn")
     @Permission("uworldguard.region.priority")
     public void priority(
@@ -936,7 +936,7 @@ public final class RegionCommands {
      * The same reorder as a dialog, for when you know which region should win but not what either is
      * called. Opens on {@code /uwg priority} with nothing after it.
      */
-    @Command("uworldguard|uwg|worldguard|wg priority")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg priority")
     @CommandDescription("Pick which region wins, without typing names")
     @Permission("uworldguard.region.priority")
     public void priorityDialog(final Source sender) {
@@ -954,8 +954,8 @@ public final class RegionCommands {
         });
     }
 
-    @Command("uworldguard|uwg|worldguard|wg parent <id> [parent]")
-    @Command("uworldguard|uwg|worldguard|wg setparent <id> [parent]")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg parent <id> [parent]")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg setparent <id> [parent]")
     @CommandDescription("Set a region's parent, or clear it by naming no parent")
     @Permission("uworldguard.region.setparent")
     public void setParent(
@@ -995,7 +995,7 @@ public final class RegionCommands {
         }
     }
 
-    @Command("uworldguard|uwg|worldguard|wg removeparent|unsetparent <id>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg removeparent|unsetparent <id>")
     @CommandDescription("Remove a region's parent")
     @Permission("uworldguard.region.setparent")
     public void removeParent(
@@ -1019,7 +1019,7 @@ public final class RegionCommands {
         }
     }
 
-    @Command("uworldguard|uwg|worldguard|wg menu")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg menu")
     @CommandDescription("Open the region menu")
     @Permission("uworldguard.menu")
     public void menu(final Source sender) {
@@ -1035,7 +1035,7 @@ public final class RegionCommands {
         new RegionMenu(plugin, player.getWorld(), regionManager, selection, chatInput).open(player);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg settings")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg settings")
     @CommandDescription("Open the settings menu")
     @Permission("uworldguard.settings")
     public void settings(final Source sender) {
@@ -1045,7 +1045,7 @@ public final class RegionCommands {
         new SettingsMenu(plugin, messages, chatInput).open(player);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg reload")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg reload")
     @CommandDescription("Reload messages and config")
     @Permission("uworldguard.reload")
     public void reload(final Source sender) {
@@ -1055,7 +1055,7 @@ public final class RegionCommands {
             + "<gray>(Storage backend and wand item still need a restart.)");
     }
 
-    @Command("uworldguard|uwg|worldguard|wg menu <id>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg menu <id>")
     @CommandDescription("Open the flag menu for a region")
     @Permission("uworldguard.menu")
     public void menu(final Source sender, @Argument(value = "id", suggestions = "region-ids") final String id) {
@@ -1077,8 +1077,8 @@ public final class RegionCommands {
         new FlagMenu(player.getWorld(), regionManager, region, chatInput).open(player);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg owner add <id> <player>")
-    @Command("uworldguard|uwg|worldguard|wg addowner <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg owner add <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg addowner <id> <player>")
     @CommandDescription("Add an owner to a region")
     @Permission("uworldguard.region.members")
     public void addOwner(
@@ -1089,8 +1089,8 @@ public final class RegionCommands {
         member(sender, id, playerName, true, true);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg owner remove <id> <player>")
-    @Command("uworldguard|uwg|worldguard|wg removeowner <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg owner remove <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg removeowner <id> <player>")
     @CommandDescription("Remove an owner from a region")
     @Permission("uworldguard.region.members")
     public void removeOwner(
@@ -1101,8 +1101,8 @@ public final class RegionCommands {
         member(sender, id, playerName, true, false);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg member add <id> <player>")
-    @Command("uworldguard|uwg|worldguard|wg addmember <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg member add <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg addmember <id> <player>")
     @CommandDescription("Add a member to a region")
     @Permission("uworldguard.region.members")
     public void addMember(
@@ -1113,8 +1113,8 @@ public final class RegionCommands {
         member(sender, id, playerName, false, true);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg member remove <id> <player>")
-    @Command("uworldguard|uwg|worldguard|wg removemember <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg member remove <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg removemember <id> <player>")
     @CommandDescription("Remove a member from a region")
     @Permission("uworldguard.region.members")
     public void removeMember(

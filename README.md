@@ -100,7 +100,8 @@ effect immediately even if the player is already armed.
 
 ### Commands
 
-Every command works as `/uworldguard`, `/uwg`, `/worldguard`, or `/wg`. Use whichever you like.
+Every command works as `/uworldguard`, `/uwg`, `/worldguard`, `/wg`, `/region`, `/regions`, or `/rg`. Use whichever you
+like.
 
 `/wg` on its own is the place to start: three commands to try first, then one clickable row per section.
 `/wg help <section>` prints that section, `/wg help all` prints everything.
@@ -491,8 +492,8 @@ plugins, …) link against a bundled compatibility layer that answers with uWorl
 - **Version checks:** a plugin that gates its WorldGuard hook on a version string starting with `7` would decline to
   hook against a 1.x plugin, even though the API is present, and Paper attaches no version to a *provided* plugin name.
   So uWorldGuard publishes the WorldGuard API level it implements (`7.0.18`) in place of its own version. It is one
-  field per plugin, so it is all-or-nothing: `/version` and bStats report it too. uWorldGuard's own log lines and its
-  update check keep using the real version. PvPManager and BetonQuest are two that need this; set
+  field per plugin, so it is all-or-nothing: `/version` reports it too. uWorldGuard's own log lines, its update check
+  and bStats keep using the real version. PvPManager and BetonQuest are two that need this; set
   `compatibility.report-version` to `none` in `config.yml` to publish the real version instead, or to a version of your
   own. A few plugins read the version out of `plugin.yml` in the jar rather than from the plugin metadata, which a
   `paper-plugin.yml` plugin does not ship; uWorldGuard answers that read with a WorldGuard descriptor carrying the same

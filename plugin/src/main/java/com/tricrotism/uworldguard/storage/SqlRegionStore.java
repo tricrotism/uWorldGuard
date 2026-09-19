@@ -23,6 +23,7 @@ public final class SqlRegionStore implements RegionStore {
     private final String user;
     private final String password;
     private final RegionSerializer serializer = new RegionSerializer();
+    private final String upsertSql;
 
     public SqlRegionStore(final String url, final String user, final String password) throws SQLException {
         this.url = url;
@@ -30,6 +31,11 @@ public final class SqlRegionStore implements RegionStore {
         this.password = password;
         try (Connection connection = connect(); Statement statement = connection.createStatement()) {
             final boolean mysql = isMySql(connection);
+            this.upsertSql = mysql
+                ? "INSERT INTO uwg_regions (world, data) VALUES (?, ?)"
+                + " ON DUPLICATE KEY UPDATE data = VALUES(data)"
+                : "INSERT INTO uwg_regions (world, data) VALUES (?, ?)"
+                + " ON CONFLICT(world) DO UPDATE SET data = excluded.data";
             statement.execute("CREATE TABLE IF NOT EXISTS uwg_regions ("
                 + "world VARCHAR(255) PRIMARY KEY, data " + (mysql ? "LONGTEXT" : "TEXT") + " NOT NULL)");
             if (mysql) {
@@ -134,11 +140,6 @@ public final class SqlRegionStore implements RegionStore {
     public void save(final String worldName, final RegionManager manager) throws Exception {
         final String data = serializer.toYaml(manager);
         try (Connection connection = connect()) {
-            final String upsertSql = isMySql(connection)
-                ? "INSERT INTO uwg_regions (world, data) VALUES (?, ?)"
-                + " ON DUPLICATE KEY UPDATE data = VALUES(data)"
-                : "INSERT INTO uwg_regions (world, data) VALUES (?, ?)"
-                + " ON CONFLICT(world) DO UPDATE SET data = excluded.data";
             try (PreparedStatement upsert = connection.prepareStatement(upsertSql)) {
                 upsert.setString(1, worldName);
                 upsert.setString(2, data);

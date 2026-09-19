@@ -31,6 +31,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDismountEvent;
 import org.bukkit.event.entity.EntityMountEvent;
@@ -69,6 +70,8 @@ public final class MovementListener implements Listener {
     private final Map<UUID, Float> savedFlySpeed = new ConcurrentHashMap<>();
     private final Map<UUID, Boolean> savedAllowFlight = new ConcurrentHashMap<>();
     private final Set<UUID> riddenMounts = ConcurrentHashMap.newKeySet();
+    private final MountMoves mountMoves = new MountMoves();
+    private volatile boolean mountMovesRegistered;
     private final Set<UUID> hidden = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Location> lastPosition = new ConcurrentHashMap<>();
 
@@ -211,6 +214,9 @@ public final class MovementListener implements Listener {
             task.cancel();
         }
         pollTasks.clear();
+        HandlerList.unregisterAll(mountMoves);
+        mountMovesRegistered = false;
+        riddenMounts.clear();
     }
 
     /**
@@ -436,27 +442,61 @@ public final class MovementListener implements Listener {
 
     /**
      * Entry/exit enforcement for a living mount (pig, horse, strider) carrying a rider whose crossing
-     * is not the one {@link #onMove} sees (the driver's crossing is, via the move-vehicle packet).
-     * {@link #deniedCrossing} ejects and teleports the denied rider out — a mounted player is glued to
-     * the vehicle, so a cancel alone does not hold them; the cancel here is just a cheap first stop.
-     * The {@code riddenMounts} fast-path keeps this near-free when nobody is riding anything.
-     * Per-region effects and continuous state still ride on {@link #onMove}.
+     * is not the one {@link MovementListener#onMove} sees (the driver's crossing is, via the
+     * move-vehicle packet). {@link MovementListener#deniedCrossing} ejects and teleports the denied
+     * rider out — a mounted player is glued to the vehicle, so a cancel alone does not hold them; the
+     * cancel here is just a cheap first stop. Per-region effects and continuous state still ride on
+     * {@link MovementListener#onMove}.
+     *
+     * <p>Its own listener, registered only while somebody is actually riding. The server recomputes
+     * {@code ServerLevel.hasEntityMoveEvent} from this event's handler list every tick, and while any
+     * handler is registered, every non-player living entity whose position <em>or rotation</em>
+     * changed that tick builds two {@link Location}s and fires the event — so a mob standing still
+     * and turning its head counts, server-wide, in every world, for a feature that is idle unless
+     * someone is on a mount. No guard inside the handler can refund that, because it is spent before
+     * the handler is reached, which is why the registration itself is the switch.
      */
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onMountMove(final EntityMoveEvent event) {
-        if (riddenMounts.isEmpty() || !event.hasChangedBlock()) {
-            return;
+    private final class MountMoves implements Listener {
+
+        @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+        public void onMountMove(final EntityMoveEvent event) {
+            if (riddenMounts.isEmpty() || !event.hasChangedBlock()) {
+                return;
+            }
+            final Entity mount = event.getEntity();
+            if (!riddenMounts.contains(mount.getUniqueId())) {
+                return;
+            }
+            if (EventGate.disabled(event)) {
+                return;
+            }
+            if (deniedCrossing(mount, event.getFrom(), event.getTo())) {
+                event.setCancelled(true);
+            }
         }
-        final Entity mount = event.getEntity();
-        if (!riddenMounts.contains(mount.getUniqueId())) {
-            return;
-        }
-        if (EventGate.disabled(event)) {
-            return;
-        }
-        if (deniedCrossing(mount, event.getFrom(), event.getTo())) {
-            event.setCancelled(true);
-        }
+    }
+
+    /**
+     * Brings the {@link MountMoves} registration in line with whether anything is being ridden.
+     *
+     * <p>The decision is made on the global region thread rather than by the caller: mounts and
+     * dismounts arrive on region threads that can interleave, and settling it in one place means a
+     * dismount racing a mount cannot leave the handler registered with nobody riding, or vice versa.
+     * {@code mountMovesRegistered} is only ever touched there, so it needs no synchronization.
+     */
+    private void syncMountMoves() {
+        plugin.getServer().getGlobalRegionScheduler().execute(plugin, () -> {
+            final boolean wanted = !riddenMounts.isEmpty();
+            if (wanted == mountMovesRegistered) {
+                return;
+            }
+            mountMovesRegistered = wanted;
+            if (wanted) {
+                plugin.getServer().getPluginManager().registerEvents(mountMoves, plugin);
+            } else {
+                HandlerList.unregisterAll(mountMoves);
+            }
+        });
     }
 
     /**
@@ -492,7 +532,9 @@ public final class MovementListener implements Listener {
         }
         final List<Entity> passengers = vehicle.getPassengers();
         if (passengers.isEmpty()) {
-            riddenMounts.remove(vehicle.getUniqueId());
+            if (riddenMounts.remove(vehicle.getUniqueId())) {
+                syncMountMoves();
+            }
             return false;
         }
 
@@ -584,7 +626,9 @@ public final class MovementListener implements Listener {
                 return;
             }
         }
-        riddenMounts.add(mount.getUniqueId());
+        if (riddenMounts.add(mount.getUniqueId())) {
+            syncMountMoves();
+        }
     }
 
     /**
@@ -604,7 +648,9 @@ public final class MovementListener implements Listener {
                 return;
             }
         }
-        riddenMounts.remove(mount.getUniqueId());
+        if (riddenMounts.remove(mount.getUniqueId())) {
+            syncMountMoves();
+        }
     }
 
     /**

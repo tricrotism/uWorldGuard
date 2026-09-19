@@ -42,11 +42,32 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class PlayerTickService implements Listener {
 
     private static final int REAPPLY_TICKS = 300;
+    /**
+     * Seconds between refreshes of an unchanged effect set. Comfortably inside {@link #REAPPLY_TICKS}
+     * so an effect never lapses, and far enough apart that a player standing in an effect region is
+     * not handed the same potion — and its client packet — once a second for nothing.
+     */
+    private static final long REAPPLY_SECONDS = 10L;
+
+    /**
+     * What this service last gave {@code player}: the flag value it came from, so an unchanged set is
+     * recognized by identity, and the types it applied, so walking out strips exactly those.
+     */
+    private record Granted(Set<PotionEffect> source, Set<PotionEffectType> types) {}
+
+    /**
+     * The time and weather overrides last pushed to a player, as the raw flag values. Held so the
+     * per-second tick can tell "nothing to do" from "something changed": without it, one region
+     * anywhere in a world setting either flag made every player in that world reset their sky every
+     * second forever, including everyone who never goes near it.
+     */
+    private record SkyLock(@Nullable String time, @Nullable String weather) {}
 
     private final Plugin plugin;
     private final RegionContainerImpl container;
     private final RegionQuery query;
-    private final Map<UUID, Set<PotionEffectType>> granted = new ConcurrentHashMap<>();
+    private final Map<UUID, Granted> granted = new ConcurrentHashMap<>();
+    private final Map<UUID, SkyLock> skyLocks = new ConcurrentHashMap<>();
     private final Map<UUID, ScheduledTask> tasks = new ConcurrentHashMap<>();
 
     public PlayerTickService(final Plugin plugin, final RegionContainerImpl container, final RegionQuery query) {
@@ -109,6 +130,7 @@ public final class PlayerTickService implements Listener {
         }
         tasks.clear();
         granted.clear();
+        skyLocks.clear();
     }
 
     @EventHandler
@@ -121,6 +143,7 @@ public final class PlayerTickService implements Listener {
         final UUID uuid = event.getPlayer().getUniqueId();
         stopTick(uuid);
         granted.remove(uuid);
+        skyLocks.remove(uuid);
     }
 
     /**
@@ -144,7 +167,7 @@ public final class PlayerTickService implements Listener {
         }
         if (regions.worldUses(Flags.GIVE_EFFECTS) || regions.worldUses(Flags.BLOCKED_EFFECTS)
             || granted.containsKey(player.getUniqueId())) {
-            effects(player, regions);
+            effects(player, regions, tick);
         }
     }
 
@@ -163,7 +186,28 @@ public final class PlayerTickService implements Listener {
      * which is why the reset runs even when the value is absent.
      */
     private void lockSky(final Player player, final ApplicableRegionSet regions) {
+        final UUID id = player.getUniqueId();
         final String time = regions.queryValue(Flags.TIME_LOCK);
+        final String weather = regions.queryValue(Flags.WEATHER_LOCK);
+        final SkyLock applied = skyLocks.get(id);
+        if (time == null && weather == null) {
+            if (applied == null) {
+                return;
+            }
+            skyLocks.remove(id);
+            if (applied.time() != null) {
+                player.resetPlayerTime();
+            }
+            if (applied.weather() != null) {
+                player.resetPlayerWeather();
+            }
+            return;
+        }
+        if (applied != null && Objects.equals(applied.time(), time)
+            && Objects.equals(applied.weather(), weather)) {
+            return;
+        }
+
         if (time == null) {
             player.resetPlayerTime();
         } else {
@@ -173,19 +217,19 @@ public final class PlayerTickService implements Listener {
             }
         }
 
-        final String weather = regions.queryValue(Flags.WEATHER_LOCK);
         if (weather == null) {
             player.resetPlayerWeather();
-            return;
+        } else {
+            final WeatherType type = switch (weather.trim().toLowerCase(Locale.ROOT)) {
+                case "clear", "sun", "sunny" -> WeatherType.CLEAR;
+                case "downfall", "rain", "storm", "thunder" -> WeatherType.DOWNFALL;
+                default -> null;
+            };
+            if (type != null) {
+                player.setPlayerWeather(type);
+            }
         }
-        final WeatherType type = switch (weather.trim().toLowerCase(Locale.ROOT)) {
-            case "clear", "sun", "sunny" -> WeatherType.CLEAR;
-            case "downfall", "rain", "storm", "thunder" -> WeatherType.DOWNFALL;
-            default -> null;
-        };
-        if (type != null) {
-            player.setPlayerWeather(type);
-        }
+        skyLocks.put(id, new SkyLock(time, weather));
     }
 
     private static @Nullable Long parseTime(final String raw) {
@@ -262,36 +306,41 @@ public final class PlayerTickService implements Listener {
     /**
      * Reapplies give-effects and strips the ones the player has walked out of. The applied duration
      * outlives the reapply interval by enough that vanilla never starts its low-duration flash, so
-     * expiry can no longer serve as the removal: what the region granted last second is tracked per
-     * player and diffed against what it grants now. Only types this service applied are ever removed,
-     * so a drunk potion survives unless the region happens to grant the same type.
+     * expiry can no longer serve as the removal: what the region granted is tracked per player and
+     * diffed against what it grants now. Only types this service applied are ever removed, so a drunk
+     * potion survives unless the region happens to grant the same type.
+     *
+     * <p>An unchanged set is only re-sent every {@link #REAPPLY_SECONDS} seconds. The flag value is
+     * the same object for as long as nobody edits it, so a change of region, amplifier or effect list
+     * is caught by identity on the very next second and applied at once — the cadence only governs
+     * the refresh of something already granted, which the client has for {@link #REAPPLY_TICKS}.
      */
-    private void effects(final Player player, final ApplicableRegionSet regions) {
+    private void effects(final Player player, final ApplicableRegionSet regions, final long tick) {
         final UUID id = player.getUniqueId();
         final Set<PotionEffect> give = regions.queryValue(Flags.GIVE_EFFECTS);
-        final Set<PotionEffectType> previous = granted.get(id);
+        final Granted previous = granted.get(id);
         if (give == null || give.isEmpty()) {
             if (previous != null) {
                 granted.remove(id);
-                for (final PotionEffectType type : previous) {
+                for (final PotionEffectType type : previous.types()) {
                     player.removePotionEffect(type);
                 }
             }
-        } else {
-            final Set<PotionEffectType> current = new HashSet<>(give.size());
+        } else if (previous == null || previous.source() != give || tick % REAPPLY_SECONDS == 0L) {
+            final Set<PotionEffectType> current = new HashSet<>(Math.max(4, give.size() * 2));
             for (final PotionEffect effect : give) {
                 player.addPotionEffect(new PotionEffect(
                     effect.getType(), REAPPLY_TICKS, effect.getAmplifier(), true, false, false));
                 current.add(effect.getType());
             }
             if (previous != null) {
-                for (final PotionEffectType type : previous) {
+                for (final PotionEffectType type : previous.types()) {
                     if (!current.contains(type)) {
                         player.removePotionEffect(type);
                     }
                 }
             }
-            granted.put(id, current);
+            granted.put(id, new Granted(give, current));
         }
 
         final Set<PotionEffect> blocked = regions.queryValue(Flags.BLOCKED_EFFECTS);

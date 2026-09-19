@@ -36,6 +36,12 @@ public abstract class ProtectedRegion {
     private volatile @Nullable ProtectedRegion parent;
     private volatile @Nullable Object compatShim;
     /**
+     * The manager holding this region, once it has been added to one. Set so a flag edit can retire
+     * that world's flag index itself: queries skip a flag the index says nobody uses, so an edit that
+     * left the index stale would read as "not set" until something else marked the world dirty.
+     */
+    private volatile @Nullable RegionManager owner;
+    /**
      * Stored flag entries no registered flag can read, by their key in storage, kept as written.
      * Allocated on first use: almost every region has none, and a map per region would be the whole
      * cost of the feature.
@@ -242,6 +248,25 @@ public abstract class ProtectedRegion {
         } else {
             flags.put(flag, value);
         }
+        edited();
+    }
+
+    /**
+     * Internal: records which manager holds this region. Plugins should not call this.
+     */
+    final void uwgOwnedBy(final @Nullable RegionManager manager) {
+        this.owner = manager;
+    }
+
+    /**
+     * Tells the owning world its flag index and stored document are both out of date. A region not
+     * yet added to a manager has nobody to tell, and needs nobody: adding it retires the index.
+     */
+    private void edited() {
+        final RegionManager manager = owner;
+        if (manager != null) {
+            manager.markDirty();
+        }
     }
 
     /**
@@ -280,6 +305,7 @@ public abstract class ProtectedRegion {
         } else {
             flagGroups.put(flag, group);
         }
+        edited();
     }
 
     /**
