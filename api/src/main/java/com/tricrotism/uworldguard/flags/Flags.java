@@ -73,6 +73,7 @@ public final class Flags {
     public static final StateFlag END_CRYSTAL_INTERACT = register(FlagCategory.PROTECTION, new StateFlag("end-crystal-interact", true));
     public static final StateFlag WORLDEDIT = register(FlagCategory.PROTECTION, new StateFlag("worldedit", true));
     public static final StateFlag PISTONS = register(FlagCategory.PROTECTION, new StateFlag("pistons", true));
+    public static final StringSetFlag NONPLAYER_PROTECTION_DOMAINS = register(FlagCategory.PROTECTION, new StringSetFlag("nonplayer-protection-domains"));
     /**
      * When allowed, the region does not take part in build protection at all — matching WorldGuard,
      * where a passthrough region is skipped entirely when deciding whether someone may build. Used
@@ -83,6 +84,7 @@ public final class Flags {
         register(FlagCategory.PROTECTION, new StateFlag("entity-item-frame-destroy", true));
     public static final StateFlag ENTITY_PAINTING_DESTROY =
         register(FlagCategory.PROTECTION, new StateFlag("entity-painting-destroy", true));
+    public static final StateFlag ITEM_FRAME_ROTATION = register(FlagCategory.PROTECTION, new StateFlag("item-frame-rotation", true));
     public static final StateFlag VEHICLE_PLACE = register(FlagCategory.PROTECTION, new StateFlag("vehicle-place", true));
     public static final StateFlag VEHICLE_DESTROY = register(FlagCategory.PROTECTION, new StateFlag("vehicle-destroy", true));
     public static final StateFlag POTION_SPLASH = register(FlagCategory.PROTECTION, new StateFlag("potion-splash", true));
@@ -132,6 +134,7 @@ public final class Flags {
     public static final StateFlag LAVA_FIRE = register(FlagCategory.ENVIRONMENT, new StateFlag("lava-fire", true));
     public static final StateFlag LAVA_FLOW = register(FlagCategory.ENVIRONMENT, new StateFlag("lava-flow", true));
     public static final StateFlag WATER_FLOW = register(FlagCategory.ENVIRONMENT, new StateFlag("water-flow", true));
+    public static final StateFlag LAVA_HARDEN = register(FlagCategory.ENVIRONMENT, new StateFlag("lava-harden", true));
     public static final StateFlag SNOW_FALL = register(FlagCategory.ENVIRONMENT, new StateFlag("snow-fall", true));
     public static final StateFlag SNOW_MELT = register(FlagCategory.ENVIRONMENT, new StateFlag("snow-melt", true));
     public static final StateFlag ICE_FORM = register(FlagCategory.ENVIRONMENT, new StateFlag("ice-form", true));
@@ -140,6 +143,7 @@ public final class Flags {
     public static final StateFlag CROP_GROWTH = register(FlagCategory.ENVIRONMENT, new StateFlag("crop-growth", true));
     public static final StateFlag VINE_GROWTH = register(FlagCategory.ENVIRONMENT, new StateFlag("vine-growth", true));
     public static final StateFlag CROP_TRAMPLE = register(FlagCategory.ENVIRONMENT, new StateFlag("crop-trample", true));
+    public static final StateFlag EGG_TRAMPLE = register(FlagCategory.ENVIRONMENT, new StateFlag("egg-trample", true));
     public static final StateFlag FROSTWALKER = register(FlagCategory.ENVIRONMENT, new StateFlag("frostwalker", true));
     public static final StateFlag FROSTED_ICE_MELT = register(FlagCategory.ENVIRONMENT, new StateFlag("frosted-ice-melt", true));
     public static final StateFlag GRASS_GROWTH = register(FlagCategory.ENVIRONMENT, new StateFlag("grass-growth", true));
@@ -225,6 +229,8 @@ public final class Flags {
     public static final StateFlag EXIT_VIA_TELEPORT = register(FlagCategory.ENTRY, new StateFlag("exit-via-teleport", true));
 
     // Enter/leave actions.
+    public static final StringFlag TELEPORT = register(FlagCategory.ENTRY, new StringFlag("teleport"));
+    public static final StringFlag TELEPORT_MESSAGE = register(FlagCategory.MESSAGES, new StringFlag("teleport-message"));
     public static final StringFlag TELEPORT_ON_ENTRY = register(FlagCategory.ENTRY, new StringFlag("teleport-on-entry"));
     public static final StringFlag TELEPORT_ON_EXIT = register(FlagCategory.ENTRY, new StringFlag("teleport-on-exit"));
     public static final StringFlag COMMAND_ON_ENTRY = register(FlagCategory.ENTRY, new StringFlag("command-on-entry"));

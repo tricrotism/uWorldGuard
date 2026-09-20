@@ -29,7 +29,7 @@ import org.jspecify.annotations.NullMarked;
 /**
  * Grief vectors that reach a block or entity without going through block-break, block-place or the
  * plain interact flag: shearing, leashing, naming, flower pots, lecterns, signs, entity buckets,
- * armour stands and mannequins.
+ * armour stands, mannequins and item frames.
  *
  * <p>Every handler here follows one shape — resolve the flag at the target, allow bypass, cancel and
  * explain — so each is a couple of lines over {@link #deny}.
@@ -120,6 +120,30 @@ public final class InteractionListener implements Listener {
             return;
         }
         deny(event, event.getPlayer(), mannequin, Flags.MANNEQUIN_MANIPULATE);
+    }
+
+    /**
+     * Putting an item into a frame and turning one that already holds an item. Taking the item back
+     * out is a punch, which {@code entity-item-frame-destroy} already covers, so without this the
+     * frame was protected against being emptied but not against being filled or spun.
+     *
+     * <p>This refuses both hands, because the client tries the off hand once the main hand comes
+     * back unused. Only the main-hand attempt prints a reason, so one click does not say it twice.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onItemFrame(final PlayerInteractEntityEvent event) {
+        if (EventGate.disabled(event) || !(event.getRightClicked() instanceof ItemFrame frame)) {
+            return;
+        }
+        final Player player = event.getPlayer();
+        if (query.getApplicableRegions(frame).testBuild(player.getUniqueId(), Flags.ITEM_FRAME_ROTATION)
+            || Bypass.has(player)) {
+            return;
+        }
+        event.setCancelled(true);
+        if (event.getHand() == EquipmentSlot.HAND) {
+            messages.sendDeny(player, Flags.ITEM_FRAME_ROTATION);
+        }
     }
 
     /**

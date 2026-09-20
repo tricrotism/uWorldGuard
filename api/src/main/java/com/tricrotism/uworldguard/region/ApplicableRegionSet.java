@@ -284,6 +284,51 @@ public final class ApplicableRegionSet {
     }
 
     /**
+     * Every applicable region's entries for {@code flag}, merged. Nothing shadows anything here, so
+     * unlike {@link #queryValue} the highest-priority region cannot hide the rest. Two regions that
+     * must agree on a name need to read the same name from either side.
+     *
+     * @return an empty set when no region here sets the flag
+     */
+    public <E> Set<E> flagSetUnion(final Flag<Set<E>> flag) {
+        if (!worldUsesOrUnknown(flag)) {
+            return Set.of();
+        }
+        Set<E> merged = null;
+        for (int i = 0, n = applicable.size(); i < n; i++) {
+            final Set<E> set = applicable.get(i).getFlag(flag);
+            if (set != null) {
+                merged = merged == null ? new HashSet<>(set) : merged;
+                merged.addAll(set);
+            }
+        }
+        final Set<E> g = global != null ? global.getFlag(flag) : null;
+        if (g != null) {
+            merged = merged == null ? new HashSet<>(g) : merged;
+            merged.addAll(g);
+        }
+        return merged == null ? Set.of() : merged;
+    }
+
+    /**
+     * Whether any applicable region's entries for {@code flag} meet {@code candidates}. Allocates
+     * nothing, so a caller holding one side's {@link #flagSetUnion} can ask this per position.
+     */
+    public <E> boolean flagSetIntersects(final Flag<Set<E>> flag, final Set<E> candidates) {
+        if (candidates.isEmpty() || !worldUsesOrUnknown(flag)) {
+            return false;
+        }
+        for (int i = 0, n = applicable.size(); i < n; i++) {
+            final Set<E> set = applicable.get(i).getFlag(flag);
+            if (set != null && !Collections.disjoint(set, candidates)) {
+                return true;
+            }
+        }
+        final Set<E> g = global != null ? global.getFlag(flag) : null;
+        return g != null && !Collections.disjoint(g, candidates);
+    }
+
+    /**
      * Resolve a typed (non-state) flag: highest-priority region that sets it wins.
      */
     public <T> @Nullable T queryValue(final Flag<T> flag) {

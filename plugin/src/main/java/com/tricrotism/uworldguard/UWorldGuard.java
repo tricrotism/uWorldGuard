@@ -265,7 +265,7 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
                 + " installed. Plugins that require WorldGuard will not function.");
             return false;
         }
-        FlagBridge.registerDormantFlags();
+        FlagBridge.bindFlags();
         return true;
     }
 

@@ -76,10 +76,10 @@ public final class FlagBridge {
     }
 
     /**
-     * Binds the built-in shim flags and registers dormant engine flags for the WorldGuard flags
-     * uWorldGuard has no counterpart for. Idempotent; safe to call from any thread.
+     * Binds the built-in shim flags to the engine flags they delegate to. Idempotent, and safe to
+     * call from any thread.
      */
-    public static void registerDormantFlags() {
+    public static void bindFlags() {
         ensureBound();
     }
 
@@ -209,31 +209,11 @@ public final class FlagBridge {
         if (bound) {
             return;
         }
-        registerDormant();
         for (final com.sk89q.worldguard.protection.flags.Flag<?> shim
             : com.sk89q.worldguard.protection.flags.Flags.uwgAll()) {
             bind(shim);
         }
         bound = true;
-    }
-
-    private static void registerDormant() {
-        dormant(new StateFlag("item-frame-rotation", true));
-        dormant(new StateFlag("lava-harden", true));
-        dormant(new StringSetFlag("nonplayer-protection-domains"));
-        dormant(new StringFlag("teleport"));
-        dormant(new StringFlag("teleport-message"));
-    }
-
-    private static void dormant(final Flag<?> flag) {
-        if (com.tricrotism.uworldguard.flags.Flags.get(flag.getName()) != null) {
-            return;
-        }
-        try {
-            com.tricrotism.uworldguard.flags.Flags.registerInternal(FlagCategory.PROTECTION, flag);
-        } catch (final IllegalStateException raced) {
-            // Another thread registered it first; the existing flag is equivalent.
-        }
     }
 
     private static void bind(final com.sk89q.worldguard.protection.flags.Flag<?> shim) {

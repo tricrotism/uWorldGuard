@@ -12,6 +12,7 @@ import com.tricrotism.uworldguard.selection.SelectionService;
 import com.tricrotism.uworldguard.text.MessageService;
 import com.tricrotism.uworldguard.text.Messages;
 import com.tricrotism.uworldguard.util.BlockVector3;
+import com.tricrotism.uworldguard.util.Locations;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -100,6 +101,7 @@ public final class RegionCommands {
         Map.entry("list", "inspect"),
         Map.entry("info", "inspect"),
         Map.entry("here", "inspect"),
+        Map.entry("teleport", "inspect"),
         Map.entry("flag", "flags"),
         Map.entry("priority", "flags"),
         Map.entry("parent", "flags"),
@@ -121,7 +123,7 @@ public final class RegionCommands {
         "define-cylinder", "define-sphere", "define-polygon",
         "redefine-cylinder", "redefine-sphere", "redefine-polygon",
         "addowner", "removeowner", "addmember", "removemember",
-        "setparent", "removeparent");
+        "setparent", "removeparent", "tp");
 
     /**
      * The three commands worth knowing before any of the others.
@@ -690,6 +692,64 @@ public final class RegionCommands {
                 + (max.y() - min.y() + 1) + "x" + (max.z() - min.z() + 1)));
     }
 
+    /**
+     * Go to a region. A {@code teleport} flag decides where. Without one the landing spot is the
+     * middle of the region's top face, which is where the region menu's right-click has always put
+     * people. A {@code teleport-message} on the region replaces the confirmation line, and an empty
+     * one silences it.
+     */
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg teleport|tp <id>")
+    @CommandDescription("Teleport to a region")
+    @Permission("uworldguard.region.teleport")
+    public void teleport(final Source sender, @Argument(value = "id", suggestions = "region-ids") final String id) {
+        final Player player = asPlayer(sender);
+        if (player == null) return;
+
+        final RegionManager regionManager = managerFor(sender);
+        if (regionManager == null) return;
+
+        final ProtectedRegion region = regionManager.getRegion(id);
+        if (region == null) {
+            error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            return;
+        }
+
+        final String flagged = region.getFlag(Flags.TELEPORT);
+        if (flagged != null && !flagged.isBlank()) {
+            final Location target = Locations.parse(messages.expand(player, flagged));
+            if (target == null) {
+                error(sender, "<aqua><id></aqua>'s teleport flag is not a location: <value>.",
+                    Placeholder.unparsed("id", region.getId()),
+                    Placeholder.unparsed("value", flagged));
+                return;
+            }
+            arrive(sender, player, region, target);
+            return;
+        }
+        if (region.getType() == RegionType.GLOBAL) {
+            error(sender, "The global region covers the whole world, so there is nowhere in"
+                + " particular to go. Give it a teleport flag if you want one.");
+            return;
+        }
+
+        final BlockVector3 min = region.getMinimumPoint();
+        final BlockVector3 max = region.getMaximumPoint();
+        arrive(sender, player, region, new Location(player.getWorld(),
+            (min.x() + max.x()) / 2.0 + 0.5, max.y() + 1, (min.z() + max.z()) / 2.0 + 0.5));
+    }
+
+    private void arrive(
+        final Source sender, final Player player, final ProtectedRegion region, final Location target
+    ) {
+        player.teleportAsync(target);
+        final String custom = region.getFlag(Flags.TELEPORT_MESSAGE);
+        if (custom == null) {
+            success(sender, "Teleported to <aqua><id></aqua>.", Placeholder.unparsed("id", region.getId()));
+        } else if (!custom.isBlank()) {
+            player.sendMessage(messages.render(custom, player));
+        }
+    }
+
     @Command("uworldguard|uwg|worldguard|wg|region|regions|rg info <id>")
     @CommandDescription("Show details about a region")
     @Permission("uworldguard.region.info")
@@ -1232,7 +1292,7 @@ public final class RegionCommands {
         if (flag instanceof PotionEffectSetFlag) return List.of("SPEED:1,NIGHT_VISION");
         if (flag instanceof MaterialSetFlag) return List.of("DIAMOND_SWORD,BOW");
         if (flag instanceof IntegerFlag || flag instanceof DoubleFlag) return List.of("1");
-        if (flag == Flags.TELEPORT_ON_ENTRY || flag == Flags.TELEPORT_ON_EXIT
+        if (flag == Flags.TELEPORT || flag == Flags.TELEPORT_ON_ENTRY || flag == Flags.TELEPORT_ON_EXIT
             || flag == Flags.RESPAWN_LOCATION || flag == Flags.JOIN_LOCATION) {
             return List.of("world,0,64,0");
         }

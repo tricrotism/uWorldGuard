@@ -9,6 +9,8 @@ import com.tricrotism.uworldguard.storage.RegionStore;
 import com.tricrotism.uworldguard.util.BlockVector3;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
+import org.bukkit.event.block.BlockFormEvent;
 import org.bukkit.event.block.BlockFromToEvent;
 import org.bukkit.event.block.LeavesDecayEvent;
 import org.junit.jupiter.api.AfterEach;
@@ -107,6 +109,39 @@ class NaturalProtectionTest {
 
         assertFalse(decay(16, 16));
         assertTrue(decay(500, 500));
+    }
+
+    private boolean harden(final int x, final int z, final Material into) {
+        final Block lava = world.getBlockAt(x, 64, z);
+        lava.setType(Material.LAVA);
+        final BlockState formed = lava.getState();
+        formed.setType(into);
+        final BlockFormEvent event = new BlockFormEvent(lava, formed);
+        listener.onForm(event);
+        return !event.isCancelled();
+    }
+
+    @Test
+    void lavaHardensWhereNobodySetTheFlag() {
+        claim("plot");
+
+        assertTrue(harden(16, 16, Material.OBSIDIAN));
+    }
+
+    @Test
+    void lavaHardeningStopsInARegionThatDeniesIt() {
+        claim("plot").setFlag(Flags.LAVA_HARDEN, State.DENY);
+
+        assertFalse(harden(16, 16, Material.OBSIDIAN));
+        assertFalse(harden(16, 17, Material.COBBLESTONE), "the cobblestone case too");
+        assertTrue(harden(500, 500, Material.OBSIDIAN), "wilderness is unaffected");
+    }
+
+    @Test
+    void lavaHardenLeavesOtherBlockFormingAlone() {
+        claim("plot").setFlag(Flags.LAVA_HARDEN, State.DENY);
+
+        assertTrue(harden(16, 16, Material.ICE), "ice forming answers to ice-form, not lava-harden");
     }
 
     @Test

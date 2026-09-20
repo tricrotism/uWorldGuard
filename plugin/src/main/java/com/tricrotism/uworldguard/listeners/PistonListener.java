@@ -15,6 +15,7 @@ import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.jspecify.annotations.NullMarked;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Enforces the pistons flag. Without it a piston placed outside a region can push blocks in, or pull
@@ -29,6 +30,11 @@ import java.util.List;
  * <p>In a straight push each block's destination is the next block's source, so the position last
  * checked is remembered and that repeat is skipped: a ten-block push costs eleven queries rather
  * than twenty.
+ *
+ * <p>{@code nonplayer-protection-domains} is how machinery spans regions. A position that names a
+ * domain the piston's own regions also name counts as open to that piston, so a redstone room and
+ * the farm it drives need not be one region. Reading the piston's domains costs one pass per event,
+ * and returns nothing at all on a world where nobody set the flag.
  */
 @NullMarked
 public final class PistonListener implements Listener {
@@ -72,6 +78,7 @@ public final class PistonListener implements Listener {
         if (!atPiston.testState(Flags.PISTONS)) {
             return true;
         }
+        final Set<String> domains = atPiston.flagSetUnion(Flags.NONPLAYER_PROTECTION_DOMAINS);
         int lastX = Integer.MIN_VALUE;
         int lastY = Integer.MIN_VALUE;
         int lastZ = Integer.MIN_VALUE;
@@ -81,18 +88,27 @@ public final class PistonListener implements Listener {
             final int y = block.getY();
             final int z = block.getZ();
             if ((x != lastX || y != lastY || z != lastZ)
-                && !query.getApplicableRegions(world, x, y, z).testState(Flags.PISTONS)) {
+                && !allowed(query.getApplicableRegions(world, x, y, z), domains)) {
                 return true;
             }
             if ((dx | dy | dz) != 0) {
                 lastX = x + dx;
                 lastY = y + dy;
                 lastZ = z + dz;
-                if (!query.getApplicableRegions(world, lastX, lastY, lastZ).testState(Flags.PISTONS)) {
+                if (!allowed(query.getApplicableRegions(world, lastX, lastY, lastZ), domains)) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    /**
+     * Whether the piston may act on this position. Either the position allows pistons outright, or
+     * it names a domain the piston's own regions also name.
+     */
+    private static boolean allowed(final ApplicableRegionSet at, final Set<String> domains) {
+        return at.testState(Flags.PISTONS)
+            || at.flagSetIntersects(Flags.NONPLAYER_PROTECTION_DOMAINS, domains);
     }
 }

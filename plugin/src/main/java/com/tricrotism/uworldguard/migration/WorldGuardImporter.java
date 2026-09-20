@@ -263,6 +263,10 @@ public final class WorldGuardImporter {
      * Copies one region's flags across, resolving WorldGuard's name to ours directly, then through
      * {@link WgFlagNames}. Anything still unresolved is counted rather than dropped in silence, so
      * the caller can tell the admin exactly what did not come over.
+     *
+     * <p>Where uWorldGuard splits a WorldGuard flag in two, the stored value goes to both halves.
+     * {@code block-trampling} becomes {@code crop-trample} and {@code egg-trample}, so the imported
+     * region protects everything the original did.
      */
     private static void readFlags(
         final @Nullable ConfigurationSection sec, final ProtectedRegion region, final String worldName,
@@ -273,10 +277,14 @@ public final class WorldGuardImporter {
         }
         for (final String key : sec.getKeys(false)) {
             if (key.endsWith("-group")) {
-                final Flag<?> target = resolve(key.substring(0, key.length() - "-group".length()));
+                final String flagName = key.substring(0, key.length() - "-group".length());
+                final Flag<?> target = resolve(flagName);
                 final RegionGroup group = RegionGroup.parse(String.valueOf(sec.get(key)));
                 if (target != null && group != null) {
                     region.setFlagGroup(target, group);
+                    for (final Flag<?> companion : WgFlagNames.companions(flagName)) {
+                        region.setFlagGroup(companion, group);
+                    }
                 } else {
                     groupQualifiers[0]++;
                     warnings.add("region '" + region.getId() + "': group qualifier '" + key + "' = '"
@@ -290,6 +298,9 @@ public final class WorldGuardImporter {
                 continue;
             }
             applyFlag(region, flag, sec.get(key), worldName, warnings);
+            for (final Flag<?> companion : WgFlagNames.companions(key)) {
+                applyFlag(region, companion, sec.get(key), worldName, warnings);
+            }
         }
     }
 

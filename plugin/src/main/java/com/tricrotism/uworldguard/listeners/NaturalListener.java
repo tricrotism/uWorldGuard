@@ -26,7 +26,8 @@ import java.util.Set;
 /**
  * Enforces world/environment flags that have no associated player: fluid flow, fire
  * spread/ignition, ice and snow formation/melting, leaf decay, crop/vine/mushroom/sculk/rock
- * growth, grass and mycelium spread, coral and copper fading, and farmland moisture.
+ * growth, grass and mycelium spread, coral and copper fading, lava setting into stone, and farmland
+ * moisture.
  *
  * <p>All of these resolve a {@link StateFlag} at the affected block with no membership
  * check — they describe what the world itself is allowed to do inside a region.
@@ -155,6 +156,7 @@ public final class NaturalListener implements Listener {
             case ICE, FROSTED_ICE, PACKED_ICE, BLUE_ICE -> Flags.ICE_FORM;
             case SNOW, SNOW_BLOCK -> Flags.SNOW_FALL;
             case POINTED_DRIPSTONE, DRIPSTONE_BLOCK -> Flags.ROCK_GROWTH;
+            case OBSIDIAN, COBBLESTONE, STONE, BASALT -> Flags.LAVA_HARDEN;
             default -> null;
         };
         if (flag == null || !query.usesFlag(block.getWorld(), flag)) {
