@@ -8,6 +8,7 @@ package com.tricrotism.uworldguard.wgcompat;
 import com.sk89q.worldguard.LocalPlayer;
 import com.sk89q.worldguard.domains.Association;
 import com.sk89q.worldguard.protection.ApplicableRegionSet;
+import com.sk89q.worldguard.protection.association.Associables;
 import com.sk89q.worldguard.protection.association.RegionAssociable;
 import com.sk89q.worldguard.protection.flags.Flag;
 import com.sk89q.worldguard.protection.flags.MapFlag;
@@ -275,8 +276,19 @@ public final class WrappedRegionSet implements ApplicableRegionSet {
         return global == null ? null : RegionAdapters.region(global, manager);
     }
 
+    /**
+     * Whether the engine can answer for this subject directly, skipping the shim-side walk.
+     *
+     * <p>{@code Associables.constant(NON_MEMBER)} counts. It is WorldGuard's own idiom for an actor
+     * with no identity — a piston, a dispenser, an explosion, a plugin acting as the server — so it
+     * arrives on per-block and per-damage handlers, and it means exactly what the engine's
+     * {@code null} subject means: every group qualifier is evaluated as a non-member. Without this it
+     * wrapped every applicable region per query to ask a constant.
+     */
     private static boolean engineResolvable(final RegionAssociable subject) {
-        return subject == null || subject instanceof UuidSubject;
+        return subject == null
+            || subject instanceof UuidSubject
+            || Associables.uwgIsConstantNonMember(subject);
     }
 
     private static UUID uuidOf(final RegionAssociable subject) {

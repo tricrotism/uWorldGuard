@@ -50,7 +50,7 @@ public abstract class RegionContainer {
     }
 
     public RegionQuery createQuery() {
-        return new RegionQuery();
+        return RegionQuery.UWG_SHARED;
     }
 
     /**

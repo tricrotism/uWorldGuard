@@ -183,11 +183,10 @@ public final class Flags {
     }
 
     /**
-     * Binds the built-in flags to the uWorldGuard engine and registers the handful of WorldGuard
-     * flags uWorldGuard has no counterpart for. Idempotent.
+     * Binds the built-in flags to the uWorldGuard engine. Idempotent.
      */
     public static void registerAll() {
-        com.tricrotism.uworldguard.wgcompat.FlagBridge.registerDormantFlags();
+        com.tricrotism.uworldguard.wgcompat.FlagBridge.bindFlags();
     }
 
     /**

@@ -76,10 +76,10 @@ public final class FlagBridge {
     }
 
     /**
-     * Binds the built-in shim flags and registers dormant engine flags for the WorldGuard flags
-     * uWorldGuard has no counterpart for. Idempotent; safe to call from any thread.
+     * Binds the built-in shim flags to the engine flags they delegate to. Idempotent, and safe to
+     * call from any thread.
      */
-    public static void registerDormantFlags() {
+    public static void bindFlags() {
         ensureBound();
     }
 
@@ -126,8 +126,25 @@ public final class FlagBridge {
         return shimGroup == null ? RegionGroup.ALL : RegionGroup.valueOf(((Enum<?>) shimGroup).name());
     }
 
+    /**
+     * The two enums declare their constants in different orders, so this is a table rather than an
+     * ordinal cast — and a table rather than {@code valueOf}, which hashes a string into the enum's
+     * constant directory on a path that runs once per region per flag.
+     */
+    private static final com.sk89q.worldguard.protection.flags.RegionGroup[] SHIM_GROUPS = shimGroups();
+
+    private static com.sk89q.worldguard.protection.flags.RegionGroup[] shimGroups() {
+        final RegionGroup[] engine = RegionGroup.values();
+        final com.sk89q.worldguard.protection.flags.RegionGroup[] shim =
+            new com.sk89q.worldguard.protection.flags.RegionGroup[engine.length];
+        for (int i = 0; i < engine.length; i++) {
+            shim[i] = com.sk89q.worldguard.protection.flags.RegionGroup.valueOf(engine[i].name());
+        }
+        return shim;
+    }
+
     public static Object toShimGroup(final RegionGroup group) {
-        return com.sk89q.worldguard.protection.flags.RegionGroup.valueOf(group.name());
+        return SHIM_GROUPS[group.ordinal()];
     }
 
     /**
@@ -157,6 +174,23 @@ public final class FlagBridge {
     }
 
     /**
+     * Drops what the shim holds for a released third-party flag: the mapping from its engine name to
+     * the consumer's flag object, and the WorldGuard registry's entry. Both reference classes of the
+     * plugin being unloaded, and the registry entry alone would make its next registration a
+     * conflict. A flag that did not come through the WorldGuard API is left alone.
+     */
+    public static void releaseConsumerFlag(final Flag<?> engineFlag) {
+        if (!(engineFlag instanceof BridgedConsumerFlag<?>)) {
+            return;
+        }
+        SHIM_BY_ENGINE_NAME.remove(engineFlag.getName());
+        if (com.sk89q.worldguard.WorldGuard.getInstance().getFlagRegistry()
+            instanceof com.sk89q.worldguard.protection.flags.registry.SimpleFlagRegistry registry) {
+            registry.uwgForget(engineFlag.getName());
+        }
+    }
+
+    /**
      * Whether the engine flag under this name came from a third-party registration rather than
      * uWorldGuard itself. Two plugins claiming one name is a real conflict; a plugin claiming a name
      * uWorldGuard already implements is not.
@@ -175,31 +209,11 @@ public final class FlagBridge {
         if (bound) {
             return;
         }
-        registerDormant();
         for (final com.sk89q.worldguard.protection.flags.Flag<?> shim
             : com.sk89q.worldguard.protection.flags.Flags.uwgAll()) {
             bind(shim);
         }
         bound = true;
-    }
-
-    private static void registerDormant() {
-        dormant(new StateFlag("item-frame-rotation", true));
-        dormant(new StateFlag("lava-harden", true));
-        dormant(new StringSetFlag("nonplayer-protection-domains"));
-        dormant(new StringFlag("teleport"));
-        dormant(new StringFlag("teleport-message"));
-    }
-
-    private static void dormant(final Flag<?> flag) {
-        if (com.tricrotism.uworldguard.flags.Flags.get(flag.getName()) != null) {
-            return;
-        }
-        try {
-            com.tricrotism.uworldguard.flags.Flags.register(FlagCategory.PROTECTION, flag);
-        } catch (final IllegalStateException raced) {
-            // Another thread registered it first; the existing flag is equivalent.
-        }
     }
 
     private static void bind(final com.sk89q.worldguard.protection.flags.Flag<?> shim) {

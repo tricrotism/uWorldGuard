@@ -125,6 +125,28 @@ public final class SessionBridge implements com.sk89q.worldguard.session.Session
         return removed;
     }
 
+    /**
+     * Unregisters every handler factory whose class came from {@code loader}, which is a plugin that
+     * is disabling. WorldGuard never unloads plugins, so its consumers do not unregister their
+     * handlers, and a factory left behind by a hot-swapped plugin kept running beside the new copy's:
+     * every crossing was handled twice, once by code whose classloader had been closed.
+     *
+     * <p>Sessions are rebuilt from the remaining factories, and the removed handlers get their
+     * {@code uninitialize} so whatever they granted is taken back. For players the disabling thread
+     * does not own that runs later, after the loader may have closed; a handler that fails there
+     * is logged and skipped like any other that throws.
+     *
+     * @return whether anything was unregistered
+     */
+    public boolean releaseHandlersOwnedBy(final ClassLoader loader) {
+        final boolean removed = factories.removeIf(factory -> factory.getClass().getClassLoader() == loader);
+        if (removed) {
+            discardSessions();
+            SessionDispatch.ACTIVE = !factories.isEmpty() && WgCompatBridge.active();
+        }
+        return removed;
+    }
+
     @Override
     public boolean customHandlersRegistered() {
         return !factories.isEmpty();

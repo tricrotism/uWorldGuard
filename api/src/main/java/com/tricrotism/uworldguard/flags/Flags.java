@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.flags;
 
+import io.papermc.paper.plugin.provider.classloader.ConfiguredPluginClassLoader;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
@@ -8,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 /**
  * Registry of all flags. The built-in constants mirror WorldGuard's flag set so stored
@@ -16,14 +18,42 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Other plugins may contribute their own flags via {@link #register(FlagCategory, Flag)}
  * — registered flags persist, resolve, and appear in the flag menu and command suggestions
- * exactly like built-ins. Register during your plugin's enable, before any region that uses
- * the flag is loaded from storage.
+ * exactly like built-ins. Registering after regions have loaded is fine: stored values for a name
+ * nothing has registered yet are kept as written, and applied the moment the flag registers.
+ *
+ * <p>A flag belongs to the plugin whose code registered it. When that plugin disables, its flags
+ * are released and their values go back to being kept as written, so the plugin can be reloaded
+ * in place (with a hot-swap tool such as Cork) and register the same names again.
  */
 @NullMarked
 public final class Flags {
 
     private static final Map<String, Flag<?>> BY_NAME = new ConcurrentHashMap<>();
     private static volatile List<Flag<?>> ordered = List.of();
+    /**
+     * Next never-used index. Separate from {@code ordered.size()} because a released flag leaves
+     * the list but keeps its index reserved, and bitsets sized off the list would then be too short
+     * for every flag registered after it.
+     */
+    private static volatile int nextIndex;
+    /**
+     * Indexes of released flags, by name, handed back when that name registers again, so a plugin
+     * reloaded any number of times reuses one slot instead of growing every region bitset.
+     */
+    private static final Map<String, Integer> RELEASED = new ConcurrentHashMap<>();
+    /**
+     * The classloader of the plugin that registered each flag. Strong references, dropped by
+     * {@link #release}, which runs while that plugin disables and before its loader closes.
+     */
+    private static final Map<Flag<?>, ClassLoader> OWNERS = new ConcurrentHashMap<>();
+    private static final StackWalker WALKER = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
+    private static volatile Consumer<Flag<?>> onRegister = _ -> {};
+    /**
+     * False while the built-in constants below register. Whatever first touches this class runs
+     * that initialization on its own stack, and when that is another plugin the stack walk would
+     * credit it with every built-in flag.
+     */
+    private static volatile boolean builtInsRegistered;
 
     // Protection.
     public static final StateFlag BUILD = register(FlagCategory.PROTECTION, new StateFlag("build", true));
@@ -43,6 +73,7 @@ public final class Flags {
     public static final StateFlag END_CRYSTAL_INTERACT = register(FlagCategory.PROTECTION, new StateFlag("end-crystal-interact", true));
     public static final StateFlag WORLDEDIT = register(FlagCategory.PROTECTION, new StateFlag("worldedit", true));
     public static final StateFlag PISTONS = register(FlagCategory.PROTECTION, new StateFlag("pistons", true));
+    public static final StringSetFlag NONPLAYER_PROTECTION_DOMAINS = register(FlagCategory.PROTECTION, new StringSetFlag("nonplayer-protection-domains"));
     /**
      * When allowed, the region does not take part in build protection at all — matching WorldGuard,
      * where a passthrough region is skipped entirely when deciding whether someone may build. Used
@@ -53,6 +84,7 @@ public final class Flags {
         register(FlagCategory.PROTECTION, new StateFlag("entity-item-frame-destroy", true));
     public static final StateFlag ENTITY_PAINTING_DESTROY =
         register(FlagCategory.PROTECTION, new StateFlag("entity-painting-destroy", true));
+    public static final StateFlag ITEM_FRAME_ROTATION = register(FlagCategory.PROTECTION, new StateFlag("item-frame-rotation", true));
     public static final StateFlag VEHICLE_PLACE = register(FlagCategory.PROTECTION, new StateFlag("vehicle-place", true));
     public static final StateFlag VEHICLE_DESTROY = register(FlagCategory.PROTECTION, new StateFlag("vehicle-destroy", true));
     public static final StateFlag POTION_SPLASH = register(FlagCategory.PROTECTION, new StateFlag("potion-splash", true));
@@ -102,6 +134,7 @@ public final class Flags {
     public static final StateFlag LAVA_FIRE = register(FlagCategory.ENVIRONMENT, new StateFlag("lava-fire", true));
     public static final StateFlag LAVA_FLOW = register(FlagCategory.ENVIRONMENT, new StateFlag("lava-flow", true));
     public static final StateFlag WATER_FLOW = register(FlagCategory.ENVIRONMENT, new StateFlag("water-flow", true));
+    public static final StateFlag LAVA_HARDEN = register(FlagCategory.ENVIRONMENT, new StateFlag("lava-harden", true));
     public static final StateFlag SNOW_FALL = register(FlagCategory.ENVIRONMENT, new StateFlag("snow-fall", true));
     public static final StateFlag SNOW_MELT = register(FlagCategory.ENVIRONMENT, new StateFlag("snow-melt", true));
     public static final StateFlag ICE_FORM = register(FlagCategory.ENVIRONMENT, new StateFlag("ice-form", true));
@@ -110,6 +143,7 @@ public final class Flags {
     public static final StateFlag CROP_GROWTH = register(FlagCategory.ENVIRONMENT, new StateFlag("crop-growth", true));
     public static final StateFlag VINE_GROWTH = register(FlagCategory.ENVIRONMENT, new StateFlag("vine-growth", true));
     public static final StateFlag CROP_TRAMPLE = register(FlagCategory.ENVIRONMENT, new StateFlag("crop-trample", true));
+    public static final StateFlag EGG_TRAMPLE = register(FlagCategory.ENVIRONMENT, new StateFlag("egg-trample", true));
     public static final StateFlag FROSTWALKER = register(FlagCategory.ENVIRONMENT, new StateFlag("frostwalker", true));
     public static final StateFlag FROSTED_ICE_MELT = register(FlagCategory.ENVIRONMENT, new StateFlag("frosted-ice-melt", true));
     public static final StateFlag GRASS_GROWTH = register(FlagCategory.ENVIRONMENT, new StateFlag("grass-growth", true));
@@ -195,6 +229,8 @@ public final class Flags {
     public static final StateFlag EXIT_VIA_TELEPORT = register(FlagCategory.ENTRY, new StateFlag("exit-via-teleport", true));
 
     // Enter/leave actions.
+    public static final StringFlag TELEPORT = register(FlagCategory.ENTRY, new StringFlag("teleport"));
+    public static final StringFlag TELEPORT_MESSAGE = register(FlagCategory.MESSAGES, new StringFlag("teleport-message"));
     public static final StringFlag TELEPORT_ON_ENTRY = register(FlagCategory.ENTRY, new StringFlag("teleport-on-entry"));
     public static final StringFlag TELEPORT_ON_EXIT = register(FlagCategory.ENTRY, new StringFlag("teleport-on-exit"));
     public static final StringFlag COMMAND_ON_ENTRY = register(FlagCategory.ENTRY, new StringFlag("command-on-entry"));
@@ -227,6 +263,10 @@ public final class Flags {
     public static final BooleanFlag DISABLE_COLLISION = register(FlagCategory.PLAYER, new BooleanFlag("disable-collision"));
     public static final StateFlag CHAMBERED_ENDERPEARL = register(FlagCategory.MOVEMENT, new StateFlag("chambered-enderpearl", true));
 
+    static {
+        builtInsRegistered = true;
+    }
+
     private Flags() {}
 
     /**
@@ -235,26 +275,111 @@ public final class Flags {
      * @return the flag, for assignment to a constant
      * @throws IllegalStateException if a flag with the same name is already registered
      */
-    public static synchronized <F extends Flag<?>> F register(final FlagCategory category, final F flag) {
-        final String key = flag.getName().toLowerCase(Locale.ROOT);
-        if (BY_NAME.containsKey(key)) {
-            throw new IllegalStateException("A flag named '" + flag.getName() + "' is already registered");
-        }
-        flag.setCategory(category);
-        flag.setIndex(ordered.size());
-        BY_NAME.put(key, flag);
+    public static <F extends Flag<?>> F register(final FlagCategory category, final F flag) {
+        return register(category, flag, builtInsRegistered ? registeringPlugin() : null);
+    }
 
-        final List<Flag<?>> updated = new ArrayList<>(ordered);
-        updated.add(flag);
-        ordered = List.copyOf(updated);
+    /**
+     * Internal: registers a flag uWorldGuard itself provides, which is never released. The owner
+     * cannot be read off the stack for these: they can be registered lazily from inside another
+     * plugin's call, which would credit that plugin with them. Plugins should not call this.
+     */
+    public static <F extends Flag<?>> F registerInternal(final FlagCategory category, final F flag) {
+        return register(category, flag, null);
+    }
+
+    private static <F extends Flag<?>> F register(
+        final FlagCategory category, final F flag, final @Nullable ClassLoader owner
+    ) {
+        synchronized (Flags.class) {
+            final String key = flag.getName().toLowerCase(Locale.ROOT);
+            if (BY_NAME.containsKey(key)) {
+                throw new IllegalStateException("A flag named '" + flag.getName() + "' is already registered");
+            }
+            flag.setCategory(category);
+            final Integer reserved = RELEASED.remove(key);
+            if (reserved != null) {
+                flag.setIndex(reserved);
+            } else {
+                flag.setIndex(nextIndex);
+                nextIndex = nextIndex + 1;
+            }
+            BY_NAME.put(key, flag);
+            if (owner != null) {
+                OWNERS.put(flag, owner);
+            }
+
+            final List<Flag<?>> updated = new ArrayList<>(ordered);
+            updated.add(flag);
+            ordered = List.copyOf(updated);
+        }
+        onRegister.accept(flag);
         return flag;
     }
 
     /**
-     * How many flags are registered — the upper bound on {@link Flag#getIndex()}, for sizing bitsets.
+     * Internal: takes {@code flag} out of the registry so its name can be registered again, keeping
+     * its index for that name. Values already stored under it are the caller's to deal with first.
+     * Plugins should not call this.
+     *
+     * @return false when {@code flag} is not the flag currently registered under its name
+     */
+    public static synchronized boolean release(final Flag<?> flag) {
+        final String key = flag.getName().toLowerCase(Locale.ROOT);
+        if (BY_NAME.get(key) != flag) {
+            return false;
+        }
+        BY_NAME.remove(key);
+        OWNERS.remove(flag);
+        RELEASED.put(key, flag.getIndex());
+        final List<Flag<?>> updated = new ArrayList<>(ordered);
+        updated.remove(flag);
+        ordered = List.copyOf(updated);
+        return true;
+    }
+
+    /**
+     * Internal: the flags registered by code from {@code loader}. Plugins should not call this.
+     */
+    public static List<Flag<?>> ownedBy(final ClassLoader loader) {
+        final List<Flag<?>> owned = new ArrayList<>();
+        for (final Map.Entry<Flag<?>, ClassLoader> entry : OWNERS.entrySet()) {
+            if (entry.getValue() == loader) {
+                owned.add(entry.getKey());
+            }
+        }
+        return owned;
+    }
+
+    /**
+     * Internal: run after every registration, outside the registry's lock. uWorldGuard uses it to
+     * apply stored values that were waiting for the flag. Plugins should not call this.
+     */
+    public static void onRegister(final Consumer<Flag<?>> hook) {
+        onRegister = hook;
+    }
+
+    /**
+     * The nearest caller loaded by another plugin, which is who owns the flag. Registrations can
+     * arrive through uWorldGuard's own code (the WorldGuard API shim forwards here), so frames from
+     * this plugin are skipped. A built-in flag has no such caller and so no owner, and is never
+     * released.
+     */
+    private static @Nullable ClassLoader registeringPlugin() {
+        final ClassLoader own = Flags.class.getClassLoader();
+        return WALKER.walk(frames -> frames
+            .map(frame -> frame.getDeclaringClass().getClassLoader())
+            .filter(loader -> loader != own && loader instanceof ConfiguredPluginClassLoader)
+            .findFirst()
+            .orElse(null));
+    }
+
+    /**
+     * The upper bound on {@link Flag#getIndex()}, for sizing bitsets. Counts released flags too,
+     * since their indexes stay reserved.
      */
     public static int count() {
-        return ordered.size();
+        return nextIndex;
     }
 
     public static @Nullable Flag<?> get(final String name) {

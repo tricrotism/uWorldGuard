@@ -71,6 +71,12 @@ permissions:
     uworldguard.region.remove:
         description: Remove regions.
         default: op
+    uworldguard.region.select:
+        description: Load a region's bounds back into your selection (/uwg select).
+        default: op
+    uworldguard.region.teleport:
+        description: Teleport to a region (/uwg teleport).
+        default: op
     uworldguard.region.flag:
         description: Set and clear region flags.
         default: op

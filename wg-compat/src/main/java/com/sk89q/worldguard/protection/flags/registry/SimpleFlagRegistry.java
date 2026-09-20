@@ -126,6 +126,18 @@ public class SimpleFlagRegistry implements FlagRegistry {
         return new FlagConflictException(text);
     }
 
+    /**
+     * Internal: forgets a third-party flag whose plugin has disabled, so the name can be registered
+     * again and the old flag object, with the classloader behind it, is not kept. A built-in name is
+     * never forgotten.
+     */
+    public void uwgForget(final String name) {
+        final String key = name.toLowerCase(Locale.ROOT);
+        if (!worldGuardNames.contains(key)) {
+            flags.remove(key);
+        }
+    }
+
     @Override
     public void registerAll(final Collection<Flag<?>> toRegister) {
         for (final Flag<?> flag : toRegister) {

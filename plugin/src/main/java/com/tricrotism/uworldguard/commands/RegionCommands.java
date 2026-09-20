@@ -3,18 +3,17 @@ package com.tricrotism.uworldguard.commands;
 import com.tricrotism.uworldguard.UWorldGuard;
 import com.tricrotism.uworldguard.config.Bypass;
 import com.tricrotism.uworldguard.domain.DefaultDomain;
+import com.tricrotism.uworldguard.event.RegionMembershipChangeEvent;
 import com.tricrotism.uworldguard.flags.*;
 import com.tricrotism.uworldguard.flags.Flag;
-import com.tricrotism.uworldguard.gui.ChatInputService;
-import com.tricrotism.uworldguard.gui.FlagMenu;
-import com.tricrotism.uworldguard.gui.RegionMenu;
-import com.tricrotism.uworldguard.gui.SettingsMenu;
+import com.tricrotism.uworldguard.gui.*;
 import com.tricrotism.uworldguard.region.*;
 import com.tricrotism.uworldguard.selection.Selection;
 import com.tricrotism.uworldguard.selection.SelectionService;
 import com.tricrotism.uworldguard.text.MessageService;
 import com.tricrotism.uworldguard.text.Messages;
 import com.tricrotism.uworldguard.util.BlockVector3;
+import com.tricrotism.uworldguard.util.Locations;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -23,6 +22,8 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.World;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.incendo.cloud.annotation.specifier.Greedy;
 import org.incendo.cloud.annotations.*;
@@ -101,6 +102,7 @@ public final class RegionCommands {
         Map.entry("list", "inspect"),
         Map.entry("info", "inspect"),
         Map.entry("here", "inspect"),
+        Map.entry("teleport", "inspect"),
         Map.entry("flag", "flags"),
         Map.entry("priority", "flags"),
         Map.entry("parent", "flags"),
@@ -122,7 +124,7 @@ public final class RegionCommands {
         "define-cylinder", "define-sphere", "define-polygon",
         "redefine-cylinder", "redefine-sphere", "redefine-polygon",
         "addowner", "removeowner", "addmember", "removemember",
-        "setparent", "removeparent");
+        "setparent", "removeparent", "tp");
 
     /**
      * The three commands worth knowing before any of the others.
@@ -136,11 +138,17 @@ public final class RegionCommands {
     private static final String GROUP_PREFIX = "g:";
 
     /**
+     * Gap left between regions renumbered by {@code /uwg priority a>b}. Wide enough that slotting one
+     * region between two of them afterwards is a plain number, not another reorder.
+     */
+    private static final int PRIORITY_STEP = 10;
+
+    /**
      * The landing page: three commands to start with, then one clickable row per section. Printing
      * every command at once put two dozen lines of syntax on screen before a player knew which of
      * them they wanted, and the useful ones scrolled away with the rest.
      */
-    @Command("uworldguard|uwg|worldguard|wg")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg")
     @CommandDescription("Show what uWorldGuard can do")
     public void help(final Source sender) {
         final Map<String, List<Component>> sections = visibleCommands(sender);
@@ -176,7 +184,7 @@ public final class RegionCommands {
     /**
      * One section's commands, or every one of them for {@code all}.
      */
-    @Command("uworldguard|uwg|worldguard|wg help [section]")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg help [section]")
     @CommandDescription("Show the commands in one section, or all of them")
     public void helpSection(
         final Source sender,
@@ -265,14 +273,14 @@ public final class RegionCommands {
         return sections;
     }
 
-    @Command("uworldguard|uwg|worldguard|wg define <id>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define <id>")
     @CommandDescription("Define a region from your selection, cuboid or polygon")
     @Permission("uworldguard.region.define")
     public void define(final Source sender, @Argument("id") final String id) {
         fromSelection(sender, id, false);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg redefine <id>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine <id>")
     @CommandDescription("Reshape a region to your selection, keeping its flags, members and priority")
     @Permission("uworldguard.region.redefine")
     public void redefine(
@@ -304,20 +312,20 @@ public final class RegionCommands {
 
         final List<BlockVector3> points = selection.getPolygon(player);
         if (points == null || points.size() < 3) {
-            apply(sender, regionManager, new ProtectedCuboidRegion(id, sel.min(), sel.max()), replace);
+            apply(sender, player.getWorld(), regionManager, new ProtectedCuboidRegion(id, sel.min(), sel.max()), replace);
             return;
         }
 
         try {
-            apply(sender, regionManager,
+            apply(sender, player.getWorld(), regionManager,
                 new ProtectedPolygonRegion(id, points, sel.min().y(), sel.max().y()), replace);
         } catch (final IllegalArgumentException e) {
             error(sender, e.getMessage());
         }
     }
 
-    @Command("uworldguard|uwg|worldguard|wg define <id> cylinder <radiusX> <radiusZ> <minY> <maxY>")
-    @Command("uworldguard|uwg|worldguard|wg define-cylinder <id> <radiusX> <radiusZ> <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define <id> cylinder <radiusX> <radiusZ> <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define-cylinder <id> <radiusX> <radiusZ> <minY> <maxY>")
     @CommandDescription("Define a cylinder region at your location")
     @Permission("uworldguard.region.define")
     public void defineCylinder(
@@ -331,8 +339,8 @@ public final class RegionCommands {
         cylinder(sender, id, radiusX, radiusZ, minY, maxY, false);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg redefine <id> cylinder <radiusX> <radiusZ> <minY> <maxY>")
-    @Command("uworldguard|uwg|worldguard|wg redefine-cylinder <id> <radiusX> <radiusZ> <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine <id> cylinder <radiusX> <radiusZ> <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine-cylinder <id> <radiusX> <radiusZ> <minY> <maxY>")
     @CommandDescription("Reshape a region into a cylinder at your location, keeping its settings")
     @Permission("uworldguard.region.redefine")
     public void redefineCylinder(
@@ -361,15 +369,15 @@ public final class RegionCommands {
 
         @NotNull final Location loc = player.getLocation();
         try {
-            apply(sender, regionManager, new ProtectedCylinderRegion(
+            apply(sender, player.getWorld(), regionManager, new ProtectedCylinderRegion(
                 id, loc.getBlockX(), loc.getBlockZ(), radiusX, radiusZ, minY, maxY), replace);
         } catch (final IllegalArgumentException e) {
             error(sender, e.getMessage());
         }
     }
 
-    @Command("uworldguard|uwg|worldguard|wg define <id> sphere <radiusX> <radiusY> <radiusZ>")
-    @Command("uworldguard|uwg|worldguard|wg define-sphere <id> <radiusX> <radiusY> <radiusZ>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define <id> sphere <radiusX> <radiusY> <radiusZ>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define-sphere <id> <radiusX> <radiusY> <radiusZ>")
     @CommandDescription("Define a sphere region at your location")
     @Permission("uworldguard.region.define")
     public void defineSphere(
@@ -382,8 +390,8 @@ public final class RegionCommands {
         sphere(sender, id, radiusX, radiusY, radiusZ, false);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg redefine <id> sphere <radiusX> <radiusY> <radiusZ>")
-    @Command("uworldguard|uwg|worldguard|wg redefine-sphere <id> <radiusX> <radiusY> <radiusZ>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine <id> sphere <radiusX> <radiusY> <radiusZ>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine-sphere <id> <radiusX> <radiusY> <radiusZ>")
     @CommandDescription("Reshape a region into a sphere at your location, keeping its settings")
     @Permission("uworldguard.region.redefine")
     public void redefineSphere(
@@ -411,15 +419,15 @@ public final class RegionCommands {
 
         final Location loc = player.getLocation();
         try {
-            apply(sender, regionManager, new ProtectedSphereRegion(
+            apply(sender, player.getWorld(), regionManager, new ProtectedSphereRegion(
                 id, loc.getBlockX(), loc.getBlockY(), loc.getBlockZ(), radiusX, radiusY, radiusZ), replace);
         } catch (final IllegalArgumentException e) {
             error(sender, e.getMessage());
         }
     }
 
-    @Command("uworldguard|uwg|worldguard|wg define <id> polygon <minY> <maxY>")
-    @Command("uworldguard|uwg|worldguard|wg define-polygon <id> <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define <id> polygon <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg define-polygon <id> <minY> <maxY>")
     @CommandDescription("Define a polygon region from your WorldEdit selection")
     @Permission("uworldguard.region.define")
     public void definePolygon(
@@ -431,8 +439,8 @@ public final class RegionCommands {
         polygon(sender, id, minY, maxY, false);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg redefine <id> polygon <minY> <maxY>")
-    @Command("uworldguard|uwg|worldguard|wg redefine-polygon <id> <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine <id> polygon <minY> <maxY>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg redefine-polygon <id> <minY> <maxY>")
     @CommandDescription("Reshape a region to your WorldEdit polygon, keeping its settings")
     @Permission("uworldguard.region.redefine")
     public void redefinePolygon(
@@ -463,7 +471,7 @@ public final class RegionCommands {
         }
 
         try {
-            apply(sender, regionManager, new ProtectedPolygonRegion(id, points, minY, maxY), replace);
+            apply(sender, player.getWorld(), regionManager, new ProtectedPolygonRegion(id, points, minY, maxY), replace);
         } catch (final IllegalArgumentException e) {
             error(sender, e.getMessage());
         }
@@ -475,60 +483,51 @@ public final class RegionCommands {
      * the existing region's flags, members, priority and children instead of claiming a free id.
      */
     private void apply(
-        final Source sender, final RegionManager regionManager, final ProtectedRegion region,
-        final boolean replace
+        final Source sender, final World world, final RegionManager regionManager,
+        final ProtectedRegion region, final boolean replace
     ) {
+        final TagResolver idTag = Placeholder.unparsed("id", region.getId());
         if (!ProtectedRegion.isValidId(region.getId())) {
             error(sender, "Region names may only use letters, digits, <aqua>_</aqua> and "
                     + "<aqua>-</aqua>, up to <aqua><max></aqua> characters.",
                 Placeholder.unparsed("max", Integer.toString(ProtectedRegion.MAX_ID_LENGTH)));
             return;
         }
+        final RegionEditor editor = new RegionEditorImpl(world, regionManager);
 
         if (replace) {
-            if (GlobalProtectedRegion.ID.equalsIgnoreCase(region.getId())) {
-                error(sender, "The global region covers the whole world and has no shape to redefine.");
-                return;
+            switch (editor.redefine(region, sender.source())) {
+                case APPLIED -> success(sender, "Redefined region <aqua><id></aqua>.", idTag);
+                case NOT_FOUND -> error(sender, "No region named <aqua><id></aqua>.", idTag);
+                case INVALID -> error(sender, "The global region covers the whole world and has no shape to redefine.");
+                default -> {
+                }
             }
-            if (regionManager.redefineRegion(region) == null) {
-                error(sender, "No region named <aqua><id></aqua>.",
-                    Placeholder.unparsed("id", region.getId()));
-                return;
-            }
-
-            success(sender, "Redefined region <aqua><id></aqua>.",
-                Placeholder.unparsed("id", region.getId()));
             return;
         }
 
-        if (regionManager.addRegionIfAbsent(region) != null) {
-            error(sender, "A region named <aqua><id></aqua> already exists.",
-                Placeholder.unparsed("id", region.getId()));
-            return;
+        switch (editor.create(region, sender.source())) {
+            case APPLIED -> success(sender, "Created region <aqua><id></aqua>.", idTag);
+            case ALREADY_EXISTS -> error(sender, "A region named <aqua><id></aqua> already exists.", idTag);
+            default -> {
+            }
         }
-
-        success(sender, "Created region <aqua><id></aqua>.",
-            Placeholder.unparsed("id", region.getId()));
     }
 
-    @Command("uworldguard|uwg|worldguard|wg remove <id>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg remove <id>")
     @CommandDescription("Remove a region")
     @Permission("uworldguard.region.remove")
     public void remove(final Source sender, @Argument(value = "id", suggestions = "region-ids") final String id) {
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
 
-        if (GlobalProtectedRegion.ID.equalsIgnoreCase(id)) {
-            error(sender, "The global region cannot be removed.");
-            return;
+        switch (editor.remove(id, sender.source())) {
+            case APPLIED -> success(sender, "Removed region <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            case NOT_FOUND -> error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            case INVALID -> error(sender, "The global region cannot be removed.");
+            default -> {
+            }
         }
-
-        if (regionManager.removeRegion(id) == null) {
-            error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
-            return;
-        }
-
-        success(sender, "Removed region <aqua><id></aqua>.", Placeholder.unparsed("id", id));
     }
 
     /**
@@ -536,7 +535,7 @@ public final class RegionCommands {
      */
     private static final int PAGE_SIZE = 8;
 
-    @Command("uworldguard|uwg|worldguard|wg list [page]")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg list [page]")
     @CommandDescription("List regions in this world, a page at a time")
     @Permission("uworldguard.region.list")
     public void list(final Source sender, @Argument("page") final @Nullable Integer pageArg) {
@@ -607,7 +606,7 @@ public final class RegionCommands {
         return sender.source() instanceof Player player ? player.getWorld().getName() : "this world";
     }
 
-    @Command("uworldguard|uwg|worldguard|wg here")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg here")
     @CommandDescription("Show the regions you are standing in")
     @Permission("uworldguard.region.info")
     public void here(final Source sender) {
@@ -647,7 +646,7 @@ public final class RegionCommands {
         sender.source().sendMessage(message);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg bypass")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg bypass")
     @CommandDescription("Toggle your own region bypass off or on")
     @Permission(Bypass.NODE)
     public void bypass(final Source sender) {
@@ -663,7 +662,102 @@ public final class RegionCommands {
         }
     }
 
-    @Command("uworldguard|uwg|worldguard|wg info <id>")
+    /**
+     * Loads a region's bounds back into the player's selection, the step that makes {@code redefine}
+     * usable for a small correction: overshooting a region by a block otherwise means placing both
+     * corners again by hand, when the region already knows where they are.
+     */
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg select <id>")
+    @CommandDescription("Set your selection to a region's bounds")
+    @Permission("uworldguard.region.select")
+    public void select(final Source sender, @Argument(value = "id", suggestions = "region-ids") final String id) {
+        final Player player = asPlayer(sender);
+        if (player == null) return;
+
+        final RegionManager regionManager = managerFor(sender);
+        if (regionManager == null) return;
+
+        final ProtectedRegion region = regionManager.getRegion(id);
+        if (region == null) {
+            error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            return;
+        }
+        if (region.getType() == RegionType.GLOBAL) {
+            error(sender, "The global region covers the whole world and has no bounds to select.");
+            return;
+        }
+
+        final BlockVector3 min = region.getMinimumPoint();
+        final BlockVector3 max = region.getMaximumPoint();
+        selection.setSelection(player, new Selection(player.getWorld(), min, max));
+
+        final String shape = region.getType() == RegionType.CUBOID ? "" : " (bounding box)";
+        success(sender, "Selected <aqua><id></aqua><shape>: <aqua><size></aqua> blocks.",
+            Placeholder.unparsed("id", region.getId()),
+            Placeholder.unparsed("shape", shape),
+            Placeholder.unparsed("size", (max.x() - min.x() + 1) + "x"
+                + (max.y() - min.y() + 1) + "x" + (max.z() - min.z() + 1)));
+    }
+
+    /**
+     * Go to a region. A {@code teleport} flag decides where. Without one the landing spot is the
+     * middle of the region's top face, which is where the region menu's right-click has always put
+     * people. A {@code teleport-message} on the region replaces the confirmation line, and an empty
+     * one silences it.
+     */
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg teleport|tp <id>")
+    @CommandDescription("Teleport to a region")
+    @Permission("uworldguard.region.teleport")
+    public void teleport(final Source sender, @Argument(value = "id", suggestions = "region-ids") final String id) {
+        final Player player = asPlayer(sender);
+        if (player == null) return;
+
+        final RegionManager regionManager = managerFor(sender);
+        if (regionManager == null) return;
+
+        final ProtectedRegion region = regionManager.getRegion(id);
+        if (region == null) {
+            error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            return;
+        }
+
+        final String flagged = region.getFlag(Flags.TELEPORT);
+        if (flagged != null && !flagged.isBlank()) {
+            final Location target = Locations.parse(messages.expand(player, flagged));
+            if (target == null) {
+                error(sender, "<aqua><id></aqua>'s teleport flag is not a location: <value>.",
+                    Placeholder.unparsed("id", region.getId()),
+                    Placeholder.unparsed("value", flagged));
+                return;
+            }
+            arrive(sender, player, region, target);
+            return;
+        }
+        if (region.getType() == RegionType.GLOBAL) {
+            error(sender, "The global region covers the whole world, so there is nowhere in"
+                + " particular to go. Give it a teleport flag if you want one.");
+            return;
+        }
+
+        final BlockVector3 min = region.getMinimumPoint();
+        final BlockVector3 max = region.getMaximumPoint();
+        arrive(sender, player, region, new Location(player.getWorld(),
+            (min.x() + max.x()) / 2.0 + 0.5, max.y() + 1, (min.z() + max.z()) / 2.0 + 0.5));
+    }
+
+    private void arrive(
+        final Source sender, final Player player, final ProtectedRegion region, final Location target
+    ) {
+        player.teleportAsync(target);
+        final String custom = region.getFlag(Flags.TELEPORT_MESSAGE);
+        if (custom == null) {
+            success(sender, "Teleported to <aqua><id></aqua>.", Placeholder.unparsed("id", region.getId()));
+        } else if (!custom.isBlank()) {
+            player.sendMessage(messages.render(custom, player));
+        }
+    }
+
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg info <id>")
     @CommandDescription("Show details about a region")
     @Permission("uworldguard.region.info")
     public void info(final Source sender, @Argument(value = "id", suggestions = "region-ids") final String id) {
@@ -704,7 +798,7 @@ public final class RegionCommands {
         sender.source().sendMessage(card);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg flag <id> <flag> [value]")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg flag <id> <flag> [value]")
     @CommandDescription("Set or clear a flag on a region (-g to limit who it applies to)")
     @Permission("uworldguard.region.flag")
     public void flag(
@@ -715,10 +809,11 @@ public final class RegionCommands {
             suggestions = "flag-groups") final @Nullable String groupName,
         @Argument(value = "value", suggestions = "flag-values") @Greedy final @Nullable String value
     ) {
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
+        final Player player = (Player) sender.source();
 
-        final ProtectedRegion region = regionManager.getRegion(id);
+        final ProtectedRegion region = editor.manager().getRegion(id);
         if (region == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
             return;
@@ -741,36 +836,37 @@ public final class RegionCommands {
             }
         }
 
+        final TagResolver flagTag = Placeholder.unparsed("flag", flag.getName());
         if (value == null) {
             if (group != null) {
-                if (region.getFlags().get(flag) == null) {
-                    error(sender, "Flag <aqua><flag></aqua> is not set on that region, so there is"
-                        + " nothing to qualify.", Placeholder.unparsed("flag", flag.getName()));
-                    return;
+                switch (editor.setFlagGroup(region, flag, group, sender.source())) {
+                    case APPLIED, UNCHANGED -> success(sender,
+                        "Flag <aqua><flag></aqua> now applies to <aqua><group></aqua>.",
+                        flagTag, Placeholder.unparsed("group", group.serialized()));
+                    case INVALID -> error(sender, "Flag <aqua><flag></aqua> is not set on that region, so"
+                        + " there is nothing to qualify.", flagTag);
+                    default -> {
+                    }
                 }
-                region.setFlagGroup(flag, group);
-                regionManager.markDirty();
-                success(sender, "Flag <aqua><flag></aqua> now applies to <aqua><group></aqua>.",
-                    Placeholder.unparsed("flag", flag.getName()),
-                    Placeholder.unparsed("group", group.serialized()));
                 return;
             }
-            region.setFlag(flag, null);
-            region.setFlagGroup(flag, null);
-            regionManager.markDirty();
-            success(sender, "Cleared flag <aqua><flag></aqua>.", Placeholder.unparsed("flag", flag.getName()));
+            final EditResult cleared = editor.setFlag(region, flag, null, sender.source());
+            if (cleared == EditResult.APPLIED || cleared == EditResult.UNCHANGED) {
+                success(sender, "Cleared flag <aqua><flag></aqua>.", flagTag);
+            }
             return;
         }
 
-        if (!applyFlag(region, flag, value, asPlayer(sender))) {
-            error(sender, "Invalid value for flag <aqua><flag></aqua>.", Placeholder.unparsed("flag", flag.getName()));
+        final Object parsed = flag.parse(value, player);
+        if (parsed == null) {
+            error(sender, "Invalid value for flag <aqua><flag></aqua>.", flagTag);
             return;
         }
-        if (groupName != null) {
-            region.setFlagGroup(flag, group);
+        final EditResult set = storeFlag(editor, region, flag, parsed, group, sender.source());
+        if (set != EditResult.APPLIED && set != EditResult.UNCHANGED) {
+            return;
         }
 
-        regionManager.markDirty();
         final boolean qualified = group != null && group != RegionGroup.ALL;
         success(sender, "Set flag <aqua><flag></aqua> to <aqua><value></aqua>"
                 + (qualified ? " for <aqua><group></aqua>" : "") + ".",
@@ -784,31 +880,149 @@ public final class RegionCommands {
         return List.of("all", "members", "owners", "nonmembers", "nonowners", "none");
     }
 
-    @Command("uworldguard|uwg|worldguard|wg priority <id> <priority>")
-    @CommandDescription("Set a region's priority")
+    /**
+     * A region's priority, set either as a number or as an ordering: {@code /uwg priority shop 10},
+     * or {@code /uwg priority shop>spawn} to say shop wins without inventing a number for it.
+     *
+     * <p>Picking numbers is the part operators get wrong, because the number that works depends on
+     * every other region's number and none of them are on screen. Stating the relationship is what
+     * they actually know. Numbers stay underneath, so everything reading a priority still reads an
+     * int and nothing else in the plugin changes.
+     *
+     * <p>Both spellings share one command because Cloud dispatches on a literal tree, not on how many
+     * arguments were typed: two commands under {@code priority} taking a variable first argument are
+     * an ambiguous node, and the plugin refuses to enable.
+     */
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg priority <id> [priority]")
+    @CommandDescription("Set a region's priority, or order regions with shop>spawn")
     @Permission("uworldguard.region.priority")
     public void priority(
         final Source sender,
         @Argument(value = "id", suggestions = "region-ids") final String id,
-        @Argument("priority") final int priority
+        @Argument("priority") final @Nullable Integer priority
     ) {
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
 
-        final ProtectedRegion region = regionManager.getRegion(id);
+        if (id.indexOf('>') >= 0) {
+            priorityOrder(sender, editor, id);
+            return;
+        }
+
+        final ProtectedRegion region = editor.manager().getRegion(id);
         if (region == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
             return;
         }
+        if (priority == null) {
+            error(sender, "Give a number, like <aqua>/uwg priority <id> 10</aqua>, or an order, like"
+                + " <aqua>/uwg priority shop>spawn</aqua>.", Placeholder.unparsed("id", id));
+            return;
+        }
 
-        region.setPriority(priority);
-        regionManager.markDirty();
-        success(sender, "Set priority of <aqua><id></aqua> to <aqua><priority></aqua>.",
-            Placeholder.unparsed("id", id), Placeholder.unparsed("priority", Integer.toString(priority)));
+        final EditResult result = editor.setPriority(region, priority, sender.source());
+        if (result == EditResult.APPLIED || result == EditResult.UNCHANGED) {
+            success(sender, "Set priority of <aqua><id></aqua> to <aqua><priority></aqua>.",
+                Placeholder.unparsed("id", id), Placeholder.unparsed("priority", Integer.toString(priority)));
+        }
     }
 
-    @Command("uworldguard|uwg|worldguard|wg parent <id> [parent]")
-    @Command("uworldguard|uwg|worldguard|wg setparent <id> [parent]")
+    /**
+     * Renumbers the named regions so they rank in the order given, highest first.
+     *
+     * <p>Regions not named keep the priorities they have. The named ones become a run spaced
+     * {@link #PRIORITY_STEP} apart, topped at the highest priority any of them already held, so the
+     * group never sinks below where it was and the gaps leave room to slot something between two of
+     * them later without another reorder.
+     */
+    private void priorityOrder(final Source sender, final RegionEditor editor, final String order) {
+        final RegionManager regionManager = editor.manager();
+        final String[] names = order.split(">");
+        final List<ProtectedRegion> chain = new ArrayList<>(names.length);
+        for (final String raw : names) {
+            final String name = raw.trim();
+            if (name.isEmpty()) {
+                error(sender, "Empty name in <aqua><order></aqua>.", Placeholder.unparsed("order", order));
+                return;
+            }
+            final ProtectedRegion region = regionManager.getRegion(name);
+            if (region == null) {
+                error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", name));
+                return;
+            }
+            if (chain.contains(region)) {
+                error(sender, "<aqua><id></aqua> is named twice.", Placeholder.unparsed("id", region.getId()));
+                return;
+            }
+            chain.add(region);
+        }
+        if (chain.size() < 2) {
+            error(sender, "Name at least two regions, like <aqua>/uwg priority shop>spawn</aqua>.");
+            return;
+        }
+
+        if (applyOrder(editor, chain, sender.source())) {
+            success(sender, "Priority order set: <aqua><order></aqua>.",
+                Placeholder.unparsed("order", describe(chain)));
+        }
+    }
+
+    /**
+     * Renumbers {@code chain} so it ranks in the order given, highest first, as one edit. Shared by
+     * the command and the dialog so the two cannot drift into different rules.
+     *
+     * @return whether the order now holds
+     */
+    private static boolean applyOrder(
+        final RegionEditor editor, final List<ProtectedRegion> chain, final CommandSender actor
+    ) {
+        int top = (chain.size() - 1) * PRIORITY_STEP;
+        for (final ProtectedRegion region : chain) {
+            top = Math.max(top, region.getPriority());
+        }
+        final Map<ProtectedRegion, Integer> priorities = new LinkedHashMap<>();
+        for (int i = 0; i < chain.size(); i++) {
+            priorities.put(chain.get(i), top - i * PRIORITY_STEP);
+        }
+        final EditResult result = editor.setPriorities(priorities, actor);
+        return result == EditResult.APPLIED || result == EditResult.UNCHANGED;
+    }
+
+    private static String describe(final List<ProtectedRegion> chain) {
+        final StringBuilder summary = new StringBuilder(64);
+        for (int i = 0; i < chain.size(); i++) {
+            if (i > 0) {
+                summary.append(" > ");
+            }
+            summary.append(chain.get(i).getId()).append(' ').append(chain.get(i).getPriority());
+        }
+        return summary.toString();
+    }
+
+    /**
+     * The same reorder as a dialog, for when you know which region should win but not what either is
+     * called. Opens on {@code /uwg priority} with nothing after it.
+     */
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg priority")
+    @CommandDescription("Pick which region wins, without typing names")
+    @Permission("uworldguard.region.priority")
+    public void priorityDialog(final Source sender) {
+        final Player player = asPlayer(sender);
+        if (player == null) return;
+
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
+
+        PriorityDialog.open(player, editor.manager(), (viewer, chain) -> {
+            if (applyOrder(editor, chain, viewer)) {
+                viewer.sendMessage(Messages.format("<green>Priority order set: <aqua><order></aqua>.",
+                    Placeholder.unparsed("order", describe(chain))));
+            }
+        });
+    }
+
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg parent <id> [parent]")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg setparent <id> [parent]")
     @CommandDescription("Set a region's parent, or clear it by naming no parent")
     @Permission("uworldguard.region.setparent")
     public void setParent(
@@ -816,67 +1030,63 @@ public final class RegionCommands {
         @Argument(value = "id", suggestions = "region-ids") final String id,
         @Argument(value = "parent", suggestions = "region-ids") final @Nullable String parentId
     ) {
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
 
-        final ProtectedRegion region = regionManager.getRegion(id);
+        final ProtectedRegion region = editor.manager().getRegion(id);
         if (region == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
             return;
         }
 
         if (parentId == null) {
-            region.setParent(null);
-            regionManager.markDirty();
-            success(sender, "Cleared the parent of <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            final EditResult cleared = editor.setParent(region, null, sender.source());
+            if (cleared == EditResult.APPLIED || cleared == EditResult.UNCHANGED) {
+                success(sender, "Cleared the parent of <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            }
             return;
         }
 
-        final ProtectedRegion parent = regionManager.getRegion(parentId);
+        final ProtectedRegion parent = editor.manager().getRegion(parentId);
         if (parent == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", parentId));
             return;
         }
 
-        try {
-            region.setParent(parent);
-        } catch (final IllegalArgumentException _) {
-            error(sender, "That would create a circular parent relationship.");
-            return;
+        switch (editor.setParent(region, parent, sender.source())) {
+            case APPLIED, UNCHANGED -> success(sender, "Set parent of <aqua><id></aqua> to <aqua><parent></aqua>.",
+                Placeholder.unparsed("id", id), Placeholder.unparsed("parent", parentId));
+            case INVALID -> error(sender, "That would create a circular parent relationship.");
+            default -> {
+            }
         }
-
-        regionManager.markDirty();
-        success(sender, "Set parent of <aqua><id></aqua> to <aqua><parent></aqua>.",
-            Placeholder.unparsed("id", id), Placeholder.unparsed("parent", parentId));
     }
 
-    @Command("uworldguard|uwg|worldguard|wg removeparent|unsetparent <id>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg removeparent|unsetparent <id>")
     @CommandDescription("Remove a region's parent")
     @Permission("uworldguard.region.setparent")
     public void removeParent(
         final Source sender,
         @Argument(value = "id", suggestions = "region-ids") final String id
     ) {
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
 
-        final ProtectedRegion region = regionManager.getRegion(id);
+        final ProtectedRegion region = editor.manager().getRegion(id);
         if (region == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
             return;
         }
 
-        if (region.getParent() == null) {
-            error(sender, "Region <aqua><id></aqua> has no parent.", Placeholder.unparsed("id", id));
-            return;
+        switch (editor.setParent(region, null, sender.source())) {
+            case APPLIED -> success(sender, "Cleared the parent of <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+            case UNCHANGED -> error(sender, "Region <aqua><id></aqua> has no parent.", Placeholder.unparsed("id", id));
+            default -> {
+            }
         }
-
-        region.setParent(null);
-        regionManager.markDirty();
-        success(sender, "Cleared the parent of <aqua><id></aqua>.", Placeholder.unparsed("id", id));
     }
 
-    @Command("uworldguard|uwg|worldguard|wg menu")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg menu")
     @CommandDescription("Open the region menu")
     @Permission("uworldguard.menu")
     public void menu(final Source sender) {
@@ -892,7 +1102,7 @@ public final class RegionCommands {
         new RegionMenu(plugin, player.getWorld(), regionManager, selection, chatInput).open(player);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg settings")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg settings")
     @CommandDescription("Open the settings menu")
     @Permission("uworldguard.settings")
     public void settings(final Source sender) {
@@ -902,7 +1112,7 @@ public final class RegionCommands {
         new SettingsMenu(plugin, messages, chatInput).open(player);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg reload")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg reload")
     @CommandDescription("Reload messages and config")
     @Permission("uworldguard.reload")
     public void reload(final Source sender) {
@@ -912,7 +1122,7 @@ public final class RegionCommands {
             + "<gray>(Storage backend and wand item still need a restart.)");
     }
 
-    @Command("uworldguard|uwg|worldguard|wg menu <id>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg menu <id>")
     @CommandDescription("Open the flag menu for a region")
     @Permission("uworldguard.menu")
     public void menu(final Source sender, @Argument(value = "id", suggestions = "region-ids") final String id) {
@@ -931,11 +1141,11 @@ public final class RegionCommands {
             return;
         }
 
-        new FlagMenu(regionManager, region, chatInput).open(player);
+        new FlagMenu(player.getWorld(), regionManager, region, chatInput).open(player);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg owner add <id> <player>")
-    @Command("uworldguard|uwg|worldguard|wg addowner <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg owner add <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg addowner <id> <player>")
     @CommandDescription("Add an owner to a region")
     @Permission("uworldguard.region.members")
     public void addOwner(
@@ -946,8 +1156,8 @@ public final class RegionCommands {
         member(sender, id, playerName, true, true);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg owner remove <id> <player>")
-    @Command("uworldguard|uwg|worldguard|wg removeowner <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg owner remove <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg removeowner <id> <player>")
     @CommandDescription("Remove an owner from a region")
     @Permission("uworldguard.region.members")
     public void removeOwner(
@@ -958,8 +1168,8 @@ public final class RegionCommands {
         member(sender, id, playerName, true, false);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg member add <id> <player>")
-    @Command("uworldguard|uwg|worldguard|wg addmember <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg member add <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg addmember <id> <player>")
     @CommandDescription("Add a member to a region")
     @Permission("uworldguard.region.members")
     public void addMember(
@@ -970,8 +1180,8 @@ public final class RegionCommands {
         member(sender, id, playerName, false, true);
     }
 
-    @Command("uworldguard|uwg|worldguard|wg member remove <id> <player>")
-    @Command("uworldguard|uwg|worldguard|wg removemember <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg member remove <id> <player>")
+    @Command("uworldguard|uwg|worldguard|wg|region|regions|rg removemember <id> <player>")
     @CommandDescription("Remove a member from a region")
     @Permission("uworldguard.region.members")
     public void removeMember(
@@ -985,17 +1195,19 @@ public final class RegionCommands {
     private void member(
         final Source sender, final String id, final String playerName, final boolean owner, final boolean add
     ) {
-        final RegionManager regionManager = managerFor(sender);
-        if (regionManager == null) return;
+        final RegionEditor editor = editorFor(sender);
+        if (editor == null) return;
 
-        final ProtectedRegion region = regionManager.getRegion(id);
+        final ProtectedRegion region = editor.manager().getRegion(id);
         if (region == null) {
             error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
             return;
         }
+        final RegionMembershipChangeEvent.Role role =
+            owner ? RegionMembershipChangeEvent.Role.OWNER : RegionMembershipChangeEvent.Role.MEMBER;
 
         if (playerName.regionMatches(true, 0, GROUP_PREFIX, 0, GROUP_PREFIX.length())) {
-            group(sender, regionManager, region, playerName.substring(GROUP_PREFIX.length()), owner, add);
+            group(sender, editor.manager(), region, playerName.substring(GROUP_PREFIX.length()), owner, add);
             return;
         }
 
@@ -1006,24 +1218,20 @@ public final class RegionCommands {
                     Placeholder.unparsed("player", playerName));
                 return;
             }
-            if (regionManager.getRegion(id) != region) {
-                error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
-                return;
-            }
             final UUID uuid = target.getUniqueId();
-            final DefaultDomain domain = owner ? region.getOwners() : region.getMembers();
-            if (add) {
-                domain.addPlayer(uuid);
-            } else {
-                domain.removePlayer(uuid);
+            final EditResult result = add
+                ? editor.addPlayer(region, role, uuid, sender.source())
+                : editor.removePlayer(region, role, uuid, sender.source());
+            switch (result) {
+                case APPLIED, UNCHANGED -> success(sender, (add ? "Added " : "Removed ") + "<aqua><player></aqua> "
+                        + (add ? "to" : "from") + " " + (owner ? "owners" : "members")
+                        + " of <aqua><id></aqua>.",
+                    Placeholder.unparsed("player", playerName),
+                    Placeholder.unparsed("id", id));
+                case NOT_FOUND -> error(sender, "No region named <aqua><id></aqua>.", Placeholder.unparsed("id", id));
+                default -> {
+                }
             }
-
-            regionManager.markDirty();
-            success(sender, (add ? "Added " : "Removed ") + "<aqua><player></aqua> "
-                    + (add ? "to" : "from") + " " + (owner ? "owners" : "members")
-                    + " of <aqua><id></aqua>.",
-                Placeholder.unparsed("player", playerName),
-                Placeholder.unparsed("id", id));
         });
     }
 
@@ -1140,7 +1348,7 @@ public final class RegionCommands {
         if (flag instanceof PotionEffectSetFlag) return List.of("SPEED:1,NIGHT_VISION");
         if (flag instanceof MaterialSetFlag) return List.of("DIAMOND_SWORD,BOW");
         if (flag instanceof IntegerFlag || flag instanceof DoubleFlag) return List.of("1");
-        if (flag == Flags.TELEPORT_ON_ENTRY || flag == Flags.TELEPORT_ON_EXIT
+        if (flag == Flags.TELEPORT || flag == Flags.TELEPORT_ON_ENTRY || flag == Flags.TELEPORT_ON_EXIT
             || flag == Flags.RESPAWN_LOCATION || flag == Flags.JOIN_LOCATION) {
             return List.of("world,0,64,0");
         }
@@ -1148,14 +1356,32 @@ public final class RegionCommands {
         return List.of();
     }
 
-    private static <T> boolean applyFlag(
-        final ProtectedRegion region, final Flag<T> flag, final String value, final @Nullable Player setter
+    /**
+     * Stores a value parsed from a {@code Flag<?>}, whose type the command line cannot know. The
+     * parse came from that same flag, so the cast holds. {@code group} of {@code null} keeps the
+     * group the flag already had.
+     */
+    @SuppressWarnings("unchecked")
+    private static EditResult storeFlag(
+        final RegionEditor editor, final ProtectedRegion region, final Flag<?> flag, final Object value,
+        final @Nullable RegionGroup group, final CommandSender actor
     ) {
-        final T parsed = flag.parse(value, setter);
-        if (parsed == null) return false;
+        final Flag<Object> typed = (Flag<Object>) flag;
+        return group == null
+            ? editor.setFlag(region, typed, value, actor)
+            : editor.setFlag(region, typed, value, group, actor);
+    }
 
-        region.setFlag(flag, parsed);
-        return true;
+    /**
+     * The editor for the sender's world, reporting why there is none the same way
+     * {@link #managerFor} does.
+     */
+    private @Nullable RegionEditor editorFor(final Source sender) {
+        final RegionManager regionManager = managerFor(sender);
+        if (regionManager == null) {
+            return null;
+        }
+        return new RegionEditorImpl(((Player) sender.source()).getWorld(), regionManager);
     }
 
     private @Nullable RegionManager managerFor(final Source sender) {

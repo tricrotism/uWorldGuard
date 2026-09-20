@@ -35,6 +35,15 @@ public final class Associables {
         return CONSTANTS.get(association);
     }
 
+    /**
+     * Internal: whether {@code subject} is {@link #constant(Association)} for {@code NON_MEMBER},
+     * which the engine can answer for directly. Asked by type rather than by calling
+     * {@code getAssociation}, so a consumer's own associable is never invoked to find out.
+     */
+    public static boolean uwgIsConstantNonMember(final RegionAssociable subject) {
+        return subject instanceof Constant constant && constant.association() == Association.NON_MEMBER;
+    }
+
     private record Constant(Association association) implements RegionAssociable {
 
         @Override

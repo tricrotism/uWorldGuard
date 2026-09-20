@@ -36,6 +36,19 @@ public abstract class ProtectedRegion {
 
     private volatile int priority;
     private volatile @Nullable ProtectedRegion parent;
+    private volatile @Nullable Object compatShim;
+    /**
+     * The manager holding this region, once it has been added to one. Set so a flag edit can retire
+     * that world's flag index itself: queries skip a flag the index says nobody uses, so an edit that
+     * left the index stale would read as "not set" until something else marked the world dirty.
+     */
+    private volatile @Nullable RegionManager owner;
+    /**
+     * Stored flag entries no registered flag can read, by their key in storage, kept as written.
+     * Allocated on first use: almost every region has none, and a map per region would be the whole
+     * cost of the feature.
+     */
+    private volatile @Nullable Map<String, Object> unresolvedFlags;
 
     /**
      * Longest id accepted by {@link #isValidId}. Long enough for any descriptive name, short enough
@@ -71,6 +84,34 @@ public abstract class ProtectedRegion {
 
     public final String getId() {
         return id;
+    }
+
+    /**
+     * Internal (compat layer): the WorldGuard-API shim built over this region, or {@code null} while
+     * nothing has asked for one. Plugins should not call this.
+     *
+     * <p>Consumers of the shim compare regions by identity and use them as map keys, so wrapping the
+     * same region twice has to yield the same instance. Holding that instance here rather than in a
+     * side map makes the lookup a field read on the hottest path the compat layer has, and ties the
+     * shim's lifetime to the region's: a deleted region takes its wrapper with it.
+     */
+    public final @Nullable Object uwgCompatShim() {
+        return compatShim;
+    }
+
+    /**
+     * Internal (compat layer): publish {@code shim} as this region's wrapper, returning whichever
+     * instance won when two threads wrapped the same region at once. Plugins should not call this.
+     */
+    public final Object uwgLinkCompatShim(final Object shim) {
+        synchronized (this) {
+            final Object existing = compatShim;
+            if (existing != null) {
+                return existing;
+            }
+            compatShim = shim;
+            return shim;
+        }
     }
 
     public abstract RegionType getType();
@@ -146,8 +187,15 @@ public abstract class ProtectedRegion {
 
     /**
      * True if the player owns this region or any parent, by uuid or by a trusted group.
+     *
+     * <p>Always false when {@link Membership} is off, which is what makes that switch reach every
+     * caller at once rather than only the ones somebody remembered to change. The lists themselves
+     * are untouched, so turning it back on restores exactly what was there.
      */
     public final boolean isOwner(final UUID uuid) {
+        if (!Membership.grantsTrust()) {
+            return false;
+        }
         boolean groups = false;
         for (@Nullable ProtectedRegion r = this; r != null; r = r.parent) {
             if (r.owners.containsPlayer(uuid)) {
@@ -160,9 +208,12 @@ public abstract class ProtectedRegion {
 
     /**
      * True if the player owns or is a member of this region or any parent, by uuid or by a trusted
-     * group.
+     * group. False throughout when {@link Membership} is off, for the reason {@link #isOwner} gives.
      */
     public final boolean isMember(final UUID uuid) {
+        if (!Membership.grantsTrust()) {
+            return false;
+        }
         boolean groups = false;
         for (@Nullable ProtectedRegion r = this; r != null; r = r.parent) {
             if (r.owners.containsPlayer(uuid) || r.members.containsPlayer(uuid)) {
@@ -225,6 +276,25 @@ public abstract class ProtectedRegion {
         } else {
             flags.put(flag, value);
         }
+        edited();
+    }
+
+    /**
+     * Internal: records which manager holds this region. Plugins should not call this.
+     */
+    final void uwgOwnedBy(final @Nullable RegionManager manager) {
+        this.owner = manager;
+    }
+
+    /**
+     * Tells the owning world its flag index and stored document are both out of date. A region not
+     * yet added to a manager has nobody to tell, and needs nobody: adding it retires the index.
+     */
+    private void edited() {
+        final RegionManager manager = owner;
+        if (manager != null) {
+            manager.markDirty();
+        }
     }
 
     /**
@@ -263,6 +333,7 @@ public abstract class ProtectedRegion {
         } else {
             flagGroups.put(flag, group);
         }
+        edited();
     }
 
     /**
@@ -270,6 +341,47 @@ public abstract class ProtectedRegion {
      */
     public final Map<Flag<?>, RegionGroup> getFlagGroups() {
         return flagGroupsView;
+    }
+
+    /**
+     * Internal (storage): stored flag entries this region carries for flags nobody has registered,
+     * keyed as they are in storage ({@code name} for a value, {@code name-group} for its group).
+     * They are written back unchanged on save, and applied when a matching flag registers. Plugins
+     * should not call this.
+     *
+     * <p>Without them a flag whose plugin loaded late, failed to load, or was unloaded to be swapped
+     * lost its value on every region at the next save.
+     */
+    public final Map<String, Object> getUnresolvedFlags() {
+        final Map<String, Object> current = unresolvedFlags;
+        return current == null ? Map.of() : Collections.unmodifiableMap(current);
+    }
+
+    /**
+     * Internal (storage): keep {@code raw} under {@code key} until a flag can read it. Plugins
+     * should not call this.
+     */
+    public final void putUnresolvedFlag(final String key, final Object raw) {
+        Map<String, Object> current = unresolvedFlags;
+        if (current == null) {
+            synchronized (this) {
+                current = unresolvedFlags;
+                if (current == null) {
+                    current = new ConcurrentHashMap<>(4);
+                    unresolvedFlags = current;
+                }
+            }
+        }
+        current.put(key, raw);
+    }
+
+    /**
+     * Internal (storage): take back the entry kept under {@code key}, or {@code null}. Plugins
+     * should not call this.
+     */
+    public final @Nullable Object removeUnresolvedFlag(final String key) {
+        final Map<String, Object> current = unresolvedFlags;
+        return current == null ? null : current.remove(key);
     }
 
     /**
@@ -282,6 +394,9 @@ public abstract class ProtectedRegion {
     public final void copyStateFrom(final ProtectedRegion other) {
         flags.putAll(other.flags);
         flagGroups.putAll(other.flagGroups);
+        for (final Map.Entry<String, Object> entry : other.getUnresolvedFlags().entrySet()) {
+            putUnresolvedFlag(entry.getKey(), entry.getValue());
+        }
         copyDomain(other.owners, owners);
         copyDomain(other.members, members);
         priority = other.priority;

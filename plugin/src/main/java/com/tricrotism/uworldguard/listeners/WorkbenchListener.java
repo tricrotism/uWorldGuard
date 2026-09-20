@@ -31,11 +31,6 @@ import java.util.UUID;
 @NullMarked
 public final class WorkbenchListener implements Listener {
 
-    private static final Set<Material> WORKBENCHES = EnumSet.of(
-        Material.CRAFTING_TABLE, Material.ANVIL, Material.CHIPPED_ANVIL, Material.DAMAGED_ANVIL,
-        Material.ENDER_CHEST, Material.SMITHING_TABLE, Material.GRINDSTONE, Material.LOOM,
-        Material.CARTOGRAPHY_TABLE, Material.STONECUTTER, Material.ENCHANTING_TABLE);
-
     private static final Set<Material> ANVILS = EnumSet.of(
         Material.ANVIL, Material.CHIPPED_ANVIL, Material.DAMAGED_ANVIL);
 
@@ -56,7 +51,7 @@ public final class WorkbenchListener implements Listener {
             return;
         }
         final Block block = event.getClickedBlock();
-        if (block == null || !WORKBENCHES.contains(block.getType())) {
+        if (block == null || !InteractFlags.WORKBENCHES.contains(block.getType())) {
             return;
         }
         final Player player = event.getPlayer();
@@ -70,7 +65,7 @@ public final class WorkbenchListener implements Listener {
         }
         if (anvil == State.DENY) {
             denied = Flags.USE_ANVIL;
-        } else if (!set.testState(Flags.PERMIT_WORKBENCHES, uuid)) {
+        } else if (!set.testBuild(uuid, Flags.PERMIT_WORKBENCHES)) {
             denied = Flags.PERMIT_WORKBENCHES;
         } else {
             return;

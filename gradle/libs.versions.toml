@@ -12,9 +12,9 @@ packetevents = "2.7.0"
 worldedit = "7.3.8"
 placeholderapi = "2.11.6"
 invui = "1.49"
-caffeine = "3.1.8"
 bstats = "3.2.1"
-junit = "5.11.4"
+junit = "6.1.3"
+mockbukkit = "4.116.3"
 vanniktech-publish = "0.37.0"
 
 [libraries]
@@ -25,9 +25,11 @@ worldedit-bukkit = { module = "com.sk89q.worldedit:worldedit-bukkit", version.re
 worldedit-core = { module = "com.sk89q.worldedit:worldedit-core", version.ref = "worldedit" }
 placeholderapi = { module = "me.clip:placeholderapi", version.ref = "placeholderapi" }
 invui = { module = "xyz.xenondevs.invui:invui", version.ref = "invui" }
-caffeine = { module = "com.github.ben-manes.caffeine:caffeine", version.ref = "caffeine" }
 bstats-bukkit = { module = "org.bstats:bstats-bukkit", version.ref = "bstats" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+mockbukkit = { module = "org.mockbukkit.mockbukkit:mockbukkit-v1.21", version.ref = "mockbukkit" }
 
 [plugins]
 paperweight-userdev = { id = "io.papermc.paperweight.userdev", version.ref = "paperweight-userdev" }

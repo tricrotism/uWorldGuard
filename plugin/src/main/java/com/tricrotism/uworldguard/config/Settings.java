@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.config;
 
+import com.tricrotism.uworldguard.region.Membership;
 import com.tricrotism.uworldguard.util.VerboseLogging;
 import org.bukkit.Material;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -37,6 +38,7 @@ public final class Settings {
 
     private boolean updateCheck = true;
     private boolean verboseLogging = false;
+    private boolean membershipGrantsTrust = true;
 
     private boolean sqlEnabled = false;
     private String sqlUrl = "jdbc:sqlite:plugins/uWorldGuard/regions.db";
@@ -66,6 +68,9 @@ public final class Settings {
         verboseLogging = config.getBoolean("logging.verbose", verboseLogging);
         VerboseLogging.set(verboseLogging);
 
+        membershipGrantsTrust = config.getBoolean("regions.membership-grants-trust", membershipGrantsTrust);
+        Membership.set(membershipGrantsTrust);
+
         sqlEnabled = config.getBoolean("storage.sql.enabled", sqlEnabled);
         sqlUrl = config.getString("storage.sql.url", sqlUrl);
         sqlUser = config.getString("storage.sql.user", sqlUser);
@@ -74,6 +79,10 @@ public final class Settings {
 
     public boolean verboseLogging() {
         return verboseLogging;
+    }
+
+    public boolean membershipGrantsTrust() {
+        return membershipGrantsTrust;
     }
 
     public boolean updateCheck() {

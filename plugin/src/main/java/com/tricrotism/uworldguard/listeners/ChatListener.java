@@ -34,7 +34,9 @@ public final class ChatListener implements Listener {
      * where a region lookup would be a Bukkit call off the owning region thread.
      *
      * <p>A deafened viewer is dropped from the recipient set rather than the message being cancelled,
-     * so one player standing in a quiet region does not silence the message for everyone else.
+     * so one player standing in a quiet region does not silence the message for everyone else. The
+     * recipient walk is skipped unless someone is actually deafened: Paper builds the viewer set on
+     * first access, so even asking for it costs a pass over every online player.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onChatRestrictions(final AsyncChatEvent event) {
@@ -45,7 +47,9 @@ public final class ChatListener implements Listener {
             event.setCancelled(true);
             return;
         }
-        event.viewers().removeIf(viewer -> viewer instanceof Player player && chatTags.isDeafened(player.getUniqueId()));
+        if (chatTags.anyDeafened()) {
+            event.viewers().removeIf(viewer -> viewer instanceof Player player && chatTags.isDeafened(player.getUniqueId()));
+        }
     }
 
     @SuppressWarnings("OverrideOnly")

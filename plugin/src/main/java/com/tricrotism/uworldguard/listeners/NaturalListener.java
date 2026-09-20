@@ -26,10 +26,17 @@ import java.util.Set;
 /**
  * Enforces world/environment flags that have no associated player: fluid flow, fire
  * spread/ignition, ice and snow formation/melting, leaf decay, crop/vine/mushroom/sculk/rock
- * growth, grass and mycelium spread, coral and copper fading, and farmland moisture.
+ * growth, grass and mycelium spread, coral and copper fading, lava setting into stone, and farmland
+ * moisture.
  *
  * <p>All of these resolve a {@link StateFlag} at the affected block with no membership
  * check — they describe what the world itself is allowed to do inside a region.
+ *
+ * <p>Every handler tests {@link RegionQuery#usesFlag} before resolving anything. These are the
+ * hottest events the server fires — fluid flow alone runs thousands of times a second on any world
+ * with an ocean — and each flag here defaults to allow, so a world where nobody set it has the
+ * handler answering "carry on" after one bitset test rather than a chunk hash, a candidate scan and
+ * two allocations per block.
  */
 @NullMarked
 public final class NaturalListener implements Listener {
@@ -58,13 +65,16 @@ public final class NaturalListener implements Listener {
         if (EventGate.disabled(event)) {
             return;
         }
-        final Material type = event.getBlock().getType();
-        final StateFlag flag = switch (type) {
+        final Block from = event.getBlock();
+        final StateFlag flag = switch (from.getType()) {
             case LAVA -> Flags.LAVA_FLOW;
             case WATER -> Flags.WATER_FLOW;
             default -> null;
         };
-        if (flag != null && !query.testState(event.getToBlock(), flag)) {
+        if (flag == null || !query.usesFlag(from.getWorld(), flag)) {
+            return;
+        }
+        if (!query.testState(event.getToBlock(), flag)) {
             event.setCancelled(true);
         }
     }
@@ -80,7 +90,11 @@ public final class NaturalListener implements Listener {
             case SPREAD -> Flags.FIRE_SPREAD;
             default -> null;
         };
-        if (flag != null && !query.testState(event.getBlock(), flag)) {
+        final Block block = event.getBlock();
+        if (flag == null || !query.usesFlag(block.getWorld(), flag)) {
+            return;
+        }
+        if (!query.testState(block, flag)) {
             event.setCancelled(true);
         }
     }
@@ -104,7 +118,11 @@ public final class NaturalListener implements Listener {
             case RED_MUSHROOM, BROWN_MUSHROOM -> Flags.MUSHROOM_GROWTH;
             default -> null;
         };
-        if (flag != null && !query.testState(event.getBlock(), flag)) {
+        final Block block = event.getBlock();
+        if (flag == null || !query.usesFlag(block.getWorld(), flag)) {
+            return;
+        }
+        if (!query.testState(block, flag)) {
             event.setCancelled(true);
         }
     }
@@ -115,30 +133,36 @@ public final class NaturalListener implements Listener {
             return;
         }
 
+        final Block block = event.getBlock();
         if (event instanceof EntityBlockFormEvent entityForm) {
             final Entity former = entityForm.getEntity();
             if (former instanceof Player walker) {
-                if (!query.testState(event.getBlock(), Flags.FROSTWALKER, walker)) {
+                if (query.usesFlag(block.getWorld(), Flags.FROSTWALKER)
+                    && !query.testState(block, Flags.FROSTWALKER, walker)) {
                     event.setCancelled(true);
                 }
                 return;
             }
 
             if (former instanceof Snowman) {
-                if (!query.testState(event.getBlock(), Flags.SNOWMAN_TRAILS)) {
+                if (query.usesFlag(block.getWorld(), Flags.SNOWMAN_TRAILS)
+                    && !query.testState(block, Flags.SNOWMAN_TRAILS)) {
                     event.setCancelled(true);
                 }
                 return;
             }
         }
-        final BlockState newState = event.getNewState();
-        final StateFlag flag = switch (newState.getType()) {
+        final StateFlag flag = switch (event.getNewState().getType()) {
             case ICE, FROSTED_ICE, PACKED_ICE, BLUE_ICE -> Flags.ICE_FORM;
             case SNOW, SNOW_BLOCK -> Flags.SNOW_FALL;
             case POINTED_DRIPSTONE, DRIPSTONE_BLOCK -> Flags.ROCK_GROWTH;
+            case OBSIDIAN, COBBLESTONE, STONE, BASALT -> Flags.LAVA_HARDEN;
             default -> null;
         };
-        if (flag != null && !query.testState(event.getBlock(), flag)) {
+        if (flag == null || !query.usesFlag(block.getWorld(), flag)) {
+            return;
+        }
+        if (!query.testState(block, flag)) {
             event.setCancelled(true);
         }
     }
@@ -148,7 +172,8 @@ public final class NaturalListener implements Listener {
         if (EventGate.disabled(event)) {
             return;
         }
-        final Material type = event.getBlock().getType();
+        final Block block = event.getBlock();
+        final Material type = block.getType();
         StateFlag flag = switch (type) {
             case ICE -> Flags.ICE_MELT;
             case FROSTED_ICE -> Flags.FROSTED_ICE_MELT;
@@ -163,7 +188,10 @@ public final class NaturalListener implements Listener {
                 flag = Flags.COPPER_FADE;
             }
         }
-        if (flag != null && !query.testState(event.getBlock(), flag)) {
+        if (flag == null || !query.usesFlag(block.getWorld(), flag)) {
+            return;
+        }
+        if (!query.testState(block, flag)) {
             event.setCancelled(true);
         }
     }
@@ -178,6 +206,10 @@ public final class NaturalListener implements Listener {
             return;
         }
         final Block block = event.getBlock();
+        if (!query.usesFlag(block.getWorld(), Flags.MOISTURE_CHANGE)
+            && !query.usesFlag(block.getWorld(), Flags.SOIL_DRY)) {
+            return;
+        }
         final ApplicableRegionSet set = query.getApplicableRegions(block);
         if (!set.testState(Flags.MOISTURE_CHANGE)) {
             event.setCancelled(true);
@@ -206,7 +238,9 @@ public final class NaturalListener implements Listener {
         if (EventGate.disabled(event)) {
             return;
         }
-        if (!query.testState(event.getBlock(), Flags.FIRE_SPREAD)) {
+        final Block block = event.getBlock();
+        if (query.usesFlag(block.getWorld(), Flags.FIRE_SPREAD)
+            && !query.testState(block, Flags.FIRE_SPREAD)) {
             event.setCancelled(true);
         }
     }
@@ -221,7 +255,9 @@ public final class NaturalListener implements Listener {
         if (EventGate.disabled(event)) {
             return;
         }
-        if (!query.testState(event.getBlock(), Flags.SCULK_GROWTH)) {
+        final Block block = event.getBlock();
+        if (query.usesFlag(block.getWorld(), Flags.SCULK_GROWTH)
+            && !query.testState(block, Flags.SCULK_GROWTH)) {
             event.setCancelled(true);
         }
     }
@@ -235,7 +271,8 @@ public final class NaturalListener implements Listener {
         if (EventGate.disabled(event)) {
             return;
         }
-        if (event.blockList().isEmpty()) {
+        if (event.blockList().isEmpty()
+            || !query.usesFlag(event.getBlock().getWorld(), Flags.OTHER_EXPLOSION)) {
             return;
         }
         event.blockList().removeIf(block -> !query.testState(block, Flags.OTHER_EXPLOSION));
@@ -250,6 +287,9 @@ public final class NaturalListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onStructureGrow(final StructureGrowEvent event) {
         if (EventGate.disabled(event)) {
+            return;
+        }
+        if (!query.usesFlag(event.getWorld(), Flags.TREE_GROWTH)) {
             return;
         }
         event.getBlocks().removeIf(state -> !query.testState(state.getBlock(), Flags.TREE_GROWTH));
@@ -267,6 +307,9 @@ public final class NaturalListener implements Listener {
         if (EventGate.disabled(event)) {
             return;
         }
+        if (!query.usesFlag(event.getWorld(), Flags.PORTAL_CREATE)) {
+            return;
+        }
         for (final BlockState state : event.getBlocks()) {
             if (!query.testState(state.getBlock(), Flags.PORTAL_CREATE)) {
                 event.setCancelled(true);
@@ -280,7 +323,9 @@ public final class NaturalListener implements Listener {
         if (EventGate.disabled(event)) {
             return;
         }
-        if (!query.testState(event.getBlock(), Flags.LEAF_DECAY)) {
+        final Block block = event.getBlock();
+        if (query.usesFlag(block.getWorld(), Flags.LEAF_DECAY)
+            && !query.testState(block, Flags.LEAF_DECAY)) {
             event.setCancelled(true);
         }
     }
@@ -295,7 +340,8 @@ public final class NaturalListener implements Listener {
             case POINTED_DRIPSTONE, DRIPSTONE_BLOCK -> Flags.ROCK_GROWTH;
             default -> isVine(type) ? Flags.VINE_GROWTH : Flags.CROP_GROWTH;
         };
-        if (!query.testState(event.getBlock(), flag)) {
+        final Block block = event.getBlock();
+        if (query.usesFlag(block.getWorld(), flag) && !query.testState(block, flag)) {
             event.setCancelled(true);
         }
     }

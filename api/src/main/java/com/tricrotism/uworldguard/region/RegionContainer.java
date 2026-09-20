@@ -24,6 +24,13 @@ public interface RegionContainer {
     @Nullable RegionManager get(World world);
 
     /**
+     * An editor for a world's regions, or {@code null} if its regions are not loaded. Edit through
+     * this rather than on the regions directly: see {@link RegionEditor} for what it does that a
+     * direct edit does not.
+     */
+    @Nullable RegionEditor editor(World world);
+
+    /**
      * A reusable query facade over this container.
      */
     RegionQuery createQuery();

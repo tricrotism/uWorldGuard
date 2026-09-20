@@ -70,6 +70,13 @@ public abstract class ProtectedRegion implements ChangeTracked, Comparable<Prote
         this.manager = manager;
     }
 
+    /**
+     * Internal: the world manager this region is bound to, or {@code null} while it is detached.
+     */
+    public final com.tricrotism.uworldguard.region.RegionManager uwgManager() {
+        return manager;
+    }
+
     public String getId() {
         return backing.getId();
     }
@@ -205,8 +212,8 @@ public abstract class ProtectedRegion implements ChangeTracked, Comparable<Prote
 
     @SuppressWarnings("unchecked")
     public <T extends Flag<V>, V> V getFlag(final T flag) {
-        if (flag instanceof RegionGroupFlag) {
-            final com.tricrotism.uworldguard.flags.Flag<?> owner = groupOwner(flag.getName());
+        if (flag instanceof RegionGroupFlag groupFlag) {
+            final com.tricrotism.uworldguard.flags.Flag<?> owner = groupFlag.uwgOwner();
             return owner == null ? null
                 : (V) com.tricrotism.uworldguard.wgcompat.FlagBridge.toShimGroup(backing.getFlagGroup(owner));
         }
@@ -219,8 +226,8 @@ public abstract class ProtectedRegion implements ChangeTracked, Comparable<Prote
     }
 
     public <T extends Flag<V>, V> void setFlag(final T flag, final V val) {
-        if (flag instanceof RegionGroupFlag) {
-            final com.tricrotism.uworldguard.flags.Flag<?> owner = groupOwner(flag.getName());
+        if (flag instanceof RegionGroupFlag groupFlag) {
+            final com.tricrotism.uworldguard.flags.Flag<?> owner = groupFlag.uwgOwner();
             if (owner != null) {
                 backing.setFlagGroup(owner, com.tricrotism.uworldguard.wgcompat.FlagBridge.toEngineGroup(val));
             }
@@ -378,18 +385,6 @@ public abstract class ProtectedRegion implements ChangeTracked, Comparable<Prote
         final com.tricrotism.uworldguard.util.BlockVector3 hi = backing.getMaximumPoint();
         min = BlockVector3.at(lo.x(), lo.y(), lo.z());
         max = BlockVector3.at(hi.x(), hi.y(), hi.z());
-    }
-
-    /**
-     * The engine flag a {@code <name>-group} qualifier flag belongs to, or {@code null} when that
-     * flag is not bridged.
-     */
-    private static com.tricrotism.uworldguard.flags.Flag<?> groupOwner(final String groupFlagName) {
-        if (groupFlagName == null || !groupFlagName.endsWith(GROUP_SUFFIX)) {
-            return null;
-        }
-        return com.tricrotism.uworldguard.flags.WgFlagNames.resolve(
-            groupFlagName.substring(0, groupFlagName.length() - GROUP_SUFFIX.length()));
     }
 
     /**

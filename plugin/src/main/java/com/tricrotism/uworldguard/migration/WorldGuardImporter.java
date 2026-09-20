@@ -16,7 +16,6 @@ import org.jspecify.annotations.Nullable;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.*;
-import java.util.regex.Pattern;
 
 /**
  * Reads an existing WorldGuard installation's YAML region files
@@ -32,11 +31,6 @@ import java.util.regex.Pattern;
  */
 @NullMarked
 public final class WorldGuardImporter {
-
-    /**
-     * Matches a legacy colour/format code, so conversion only runs on values that carry one.
-     */
-    private static final Pattern LEGACY_CODE = Pattern.compile("[&§][0-9a-fk-orA-FK-OR]");
 
     /**
      * Outcome of importing one world. {@code conflicts} lists the ids that already existed and
@@ -264,6 +258,10 @@ public final class WorldGuardImporter {
      * Copies one region's flags across, resolving WorldGuard's name to ours directly, then through
      * {@link WgFlagNames}. Anything still unresolved is counted rather than dropped in silence, so
      * the caller can tell the admin exactly what did not come over.
+     *
+     * <p>Where uWorldGuard splits a WorldGuard flag in two, the stored value goes to both halves.
+     * {@code block-trampling} becomes {@code crop-trample} and {@code egg-trample}, so the imported
+     * region protects everything the original did.
      */
     private static void readFlags(
         final @Nullable ConfigurationSection sec, final ProtectedRegion region, final String worldName,
@@ -274,10 +272,14 @@ public final class WorldGuardImporter {
         }
         for (final String key : sec.getKeys(false)) {
             if (key.endsWith("-group")) {
-                final Flag<?> target = resolve(key.substring(0, key.length() - "-group".length()));
+                final String flagName = key.substring(0, key.length() - "-group".length());
+                final Flag<?> target = resolve(flagName);
                 final RegionGroup group = RegionGroup.parse(String.valueOf(sec.get(key)));
                 if (target != null && group != null) {
                     region.setFlagGroup(target, group);
+                    for (final Flag<?> companion : WgFlagNames.companions(flagName)) {
+                        region.setFlagGroup(companion, group);
+                    }
                 } else {
                     groupQualifiers[0]++;
                     warnings.add("region '" + region.getId() + "': group qualifier '" + key + "' = '"
@@ -291,6 +293,9 @@ public final class WorldGuardImporter {
                 continue;
             }
             applyFlag(region, flag, sec.get(key), worldName, warnings);
+            for (final Flag<?> companion : WgFlagNames.companions(key)) {
+                applyFlag(region, companion, sec.get(key), worldName, warnings);
+            }
         }
     }
 
@@ -327,7 +332,7 @@ public final class WorldGuardImporter {
      * carry no legacy code are returned untouched, so MiniMessage input already in the file is safe.
      */
     private static Object convertLegacyColours(final Object stored) {
-        if (!(stored instanceof String text) || !LEGACY_CODE.matcher(text).find()) {
+        if (!(stored instanceof String text) || !com.tricrotism.uworldguard.text.LegacyText.isLegacy(text)) {
             return stored;
         }
         return MiniMessage.miniMessage().serialize(

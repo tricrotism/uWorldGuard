@@ -32,6 +32,12 @@ public final class RegionManager {
     private final AtomicBoolean dirty = new AtomicBoolean(false);
     private volatile @Nullable GlobalProtectedRegion global;
     private volatile @Nullable ApplicableRegionSet emptySet;
+    private volatile @Nullable Object compatShim;
+    /**
+     * Its own monitor rather than the manager's: {@link #rebuildFlagIndex} holds that one across a
+     * walk of every region, and a world's first compat query has no reason to wait behind it.
+     */
+    private final Object compatShimLock = new Object();
 
     private volatile boolean flagIndexStale = true;
     private volatile long[] usedFlagBits = EMPTY_BITS;
@@ -53,6 +59,7 @@ public final class RegionManager {
      * inherit, so an import with {@code --overwrite} left the old values in force until a restart.
      */
     public void addRegion(final ProtectedRegion region) {
+        region.uwgOwnedBy(this);
         final ProtectedRegion replaced = regions.put(region.getId().toLowerCase(Locale.ROOT), region);
         if (region instanceof GlobalProtectedRegion g) {
             global = g;
@@ -87,6 +94,7 @@ public final class RegionManager {
         if (existing != null) {
             return existing;
         }
+        region.uwgOwnedBy(this);
         if (region instanceof GlobalProtectedRegion g) {
             global = g;
         }
@@ -108,6 +116,7 @@ public final class RegionManager {
      * redefine of the same id cannot interleave with it.
      */
     public @Nullable ProtectedRegion redefineRegion(final ProtectedRegion replacement) {
+        replacement.uwgOwnedBy(this);
         final ProtectedRegion[] previous = new ProtectedRegion[1];
         regions.computeIfPresent(
             replacement.getId().toLowerCase(Locale.ROOT),
@@ -141,6 +150,7 @@ public final class RegionManager {
     public @Nullable ProtectedRegion removeRegion(final String id) {
         final ProtectedRegion removed = regions.remove(id.toLowerCase(Locale.ROOT));
         if (removed != null) {
+            removed.uwgOwnedBy(null);
             if (removed == global) {
                 global = null;
             }
@@ -171,6 +181,66 @@ public final class RegionManager {
 
     public int size() {
         return regions.size();
+    }
+
+    /**
+     * Regions whose bounding box overlaps the box from {@code a} to {@code b} (inclusive, either
+     * corner first), highest priority first. The global region is never included.
+     *
+     * <p>This is the check a claim needs before it is created: does the new area touch anything that
+     * exists? It compares bounding boxes, so for a cylinder, sphere or polygon a hit means the two
+     * may overlap. Test {@link ProtectedRegion#contains} on the blocks that matter when that
+     * difference counts.
+     *
+     * <p>Walks every region in the world, so run it when a claim is made, not per move.
+     */
+    public List<ProtectedRegion> getRegionsIntersecting(final BlockVector3 a, final BlockVector3 b) {
+        final int minX = Math.min(a.x(), b.x());
+        final int minY = Math.min(a.y(), b.y());
+        final int minZ = Math.min(a.z(), b.z());
+        final int maxX = Math.max(a.x(), b.x());
+        final int maxY = Math.max(a.y(), b.y());
+        final int maxZ = Math.max(a.z(), b.z());
+        final List<ProtectedRegion> hits = new ArrayList<>();
+        for (final ProtectedRegion region : regions.values()) {
+            if (region instanceof GlobalProtectedRegion) {
+                continue;
+            }
+            final BlockVector3 min = region.getMinimumPoint();
+            final BlockVector3 max = region.getMaximumPoint();
+            if (max.x() >= minX && min.x() <= maxX
+                && max.y() >= minY && min.y() <= maxY
+                && max.z() >= minZ && min.z() <= maxZ) {
+                hits.add(region);
+            }
+        }
+        hits.sort(Comparator.comparingInt(ProtectedRegion::getPriority).reversed());
+        return hits;
+    }
+
+    /**
+     * Internal (compat layer): the WorldGuard-API shim built over this manager, or {@code null} while
+     * nothing has asked for one. Plugins should not call this.
+     *
+     * @see ProtectedRegion#uwgCompatShim()
+     */
+    public @Nullable Object uwgCompatShim() {
+        return compatShim;
+    }
+
+    /**
+     * Internal (compat layer): publish {@code shim} as this manager's wrapper, returning whichever
+     * instance won when two threads wrapped the same manager at once. Plugins should not call this.
+     */
+    public Object uwgLinkCompatShim(final Object shim) {
+        synchronized (compatShimLock) {
+            final Object existing = compatShim;
+            if (existing != null) {
+                return existing;
+            }
+            compatShim = shim;
+            return shim;
+        }
     }
 
     /**

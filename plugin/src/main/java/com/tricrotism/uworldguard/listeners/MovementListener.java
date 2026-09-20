@@ -3,6 +3,8 @@ package com.tricrotism.uworldguard.listeners;
 import com.tricrotism.uworldguard.config.Bypass;
 import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.config.Settings;
+import com.tricrotism.uworldguard.event.RegionEnterEvent;
+import com.tricrotism.uworldguard.event.RegionExitEvent;
 import com.tricrotism.uworldguard.flags.BooleanFlag;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.flags.State;
@@ -29,6 +31,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDismountEvent;
 import org.bukkit.event.entity.EntityMountEvent;
@@ -42,6 +45,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Enforces entry/exit and entry-level flags, runs per-region enter/leave effects (greeting/farewell,
@@ -66,6 +70,8 @@ public final class MovementListener implements Listener {
     private final Map<UUID, Float> savedFlySpeed = new ConcurrentHashMap<>();
     private final Map<UUID, Boolean> savedAllowFlight = new ConcurrentHashMap<>();
     private final Set<UUID> riddenMounts = ConcurrentHashMap.newKeySet();
+    private final MountMoves mountMoves = new MountMoves();
+    private volatile boolean mountMovesRegistered;
     private final Set<UUID> hidden = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Location> lastPosition = new ConcurrentHashMap<>();
 
@@ -76,11 +82,11 @@ public final class MovementListener implements Listener {
      */
     private volatile int sweepEvery;
     /**
-     * Counted up only by the global region task, which runs its repeats sequentially — but reset to
-     * zero by {@code /uwg reload} on whatever thread that arrived on, so the writes have to publish.
+     * One repeating poll per online player, so the task can be cancelled when they leave and when a
+     * reload retunes the interval. Folia retires an entity's tasks with the entity, so the handle is
+     * held for the reload case rather than for the quit case.
      */
-    private volatile int sweepTick;
-    private volatile @Nullable ScheduledTask pollTask;
+    private final Map<UUID, ScheduledTask> pollTasks = new ConcurrentHashMap<>();
 
     public MovementListener(
         final Plugin plugin, final RegionQuery query, final MessageService messages,
@@ -137,22 +143,52 @@ public final class MovementListener implements Listener {
 
     /**
      * Starts the polled movement tracker when {@code movement.mode: TASK} is configured; a no-op in
-     * event mode. A global repeating task fans each player out to their own entity scheduler, so the
-     * position read and any teleport happen on the thread that owns them.
+     * event mode. Players online at this point are picked up here, later ones by {@link #onJoin}.
+     *
+     * <p>Each player gets their own repeating task on their own entity scheduler, so the position
+     * read and any teleport happen on the thread that owns them. A global task fanning out to every
+     * player instead scheduled one entity task per player per interval — at the default interval that
+     * is five task objects per player per second, all of them queued and woken by the global thread,
+     * for work that only ever touches one player.
      */
     public void start() {
         if (!taskMode) {
             return;
         }
-        pollTask = plugin.getServer().getGlobalRegionScheduler().runAtFixedRate(plugin, task -> {
-            final boolean sweep = ++sweepTick >= sweepEvery;
+        for (final Player player : plugin.getServer().getOnlinePlayers()) {
+            startPoll(player);
+        }
+    }
+
+    /**
+     * Schedules {@code player}'s poll, replacing any it already had. Returns silently when the
+     * scheduler refuses, which it does for a player already on their way out.
+     *
+     * <p>No retired callback: Folia cancels the task with the player, {@link #onQuit} drops the
+     * handle, and a retired callback firing after a fast relog would drop the *new* handle instead,
+     * leaving a poll nothing can cancel on reload.
+     */
+    private void startPoll(final Player player) {
+        final UUID uuid = player.getUniqueId();
+        stopPoll(uuid);
+        final AtomicInteger sweepTick = new AtomicInteger();
+        final ScheduledTask task = player.getScheduler().runAtFixedRate(plugin, _ -> {
+            final boolean sweep = sweepTick.incrementAndGet() >= sweepEvery;
             if (sweep) {
-                sweepTick = 0;
+                sweepTick.set(0);
             }
-            for (final Player player : plugin.getServer().getOnlinePlayers()) {
-                player.getScheduler().run(plugin, t -> poll(player, sweep), null);
-            }
-        }, taskTicks, taskTicks);
+            poll(player, sweep);
+        }, null, taskTicks, taskTicks);
+        if (task != null) {
+            pollTasks.put(uuid, task);
+        }
+    }
+
+    private void stopPoll(final UUID uuid) {
+        final ScheduledTask existing = pollTasks.remove(uuid);
+        if (existing != null) {
+            existing.cancel();
+        }
     }
 
     /**
@@ -165,21 +201,22 @@ public final class MovementListener implements Listener {
         stop();
         readSettings(settings);
         lastPosition.clear();
-        sweepTick = 0;
         start();
     }
 
     /**
-     * Cancels the poll. Paper drops a plugin's tasks on disable anyway, but holding the handle keeps
-     * reload honest — without it a mode switch would leave the previous poll running alongside the new
-     * one, double-enforcing every crossing.
+     * Cancels every poll. Paper drops a plugin's tasks on disable anyway, but holding the handles
+     * keeps reload honest — without them a mode switch would leave the previous polls running
+     * alongside the new ones, double-enforcing every crossing.
      */
     public void stop() {
-        final ScheduledTask task = pollTask;
-        if (task != null) {
+        for (final ScheduledTask task : pollTasks.values()) {
             task.cancel();
-            pollTask = null;
         }
+        pollTasks.clear();
+        HandlerList.unregisterAll(mountMoves);
+        mountMovesRegistered = false;
+        riddenMounts.clear();
     }
 
     /**
@@ -405,27 +442,61 @@ public final class MovementListener implements Listener {
 
     /**
      * Entry/exit enforcement for a living mount (pig, horse, strider) carrying a rider whose crossing
-     * is not the one {@link #onMove} sees (the driver's crossing is, via the move-vehicle packet).
-     * {@link #deniedCrossing} ejects and teleports the denied rider out — a mounted player is glued to
-     * the vehicle, so a cancel alone does not hold them; the cancel here is just a cheap first stop.
-     * The {@code riddenMounts} fast-path keeps this near-free when nobody is riding anything.
-     * Per-region effects and continuous state still ride on {@link #onMove}.
+     * is not the one {@link MovementListener#onMove} sees (the driver's crossing is, via the
+     * move-vehicle packet). {@link MovementListener#deniedCrossing} ejects and teleports the denied
+     * rider out — a mounted player is glued to the vehicle, so a cancel alone does not hold them; the
+     * cancel here is just a cheap first stop. Per-region effects and continuous state still ride on
+     * {@link MovementListener#onMove}.
+     *
+     * <p>Its own listener, registered only while somebody is actually riding. The server recomputes
+     * {@code ServerLevel.hasEntityMoveEvent} from this event's handler list every tick, and while any
+     * handler is registered, every non-player living entity whose position <em>or rotation</em>
+     * changed that tick builds two {@link Location}s and fires the event — so a mob standing still
+     * and turning its head counts, server-wide, in every world, for a feature that is idle unless
+     * someone is on a mount. No guard inside the handler can refund that, because it is spent before
+     * the handler is reached, which is why the registration itself is the switch.
      */
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onMountMove(final EntityMoveEvent event) {
-        if (riddenMounts.isEmpty() || !event.hasChangedBlock()) {
-            return;
+    private final class MountMoves implements Listener {
+
+        @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+        public void onMountMove(final EntityMoveEvent event) {
+            if (riddenMounts.isEmpty() || !event.hasChangedBlock()) {
+                return;
+            }
+            final Entity mount = event.getEntity();
+            if (!riddenMounts.contains(mount.getUniqueId())) {
+                return;
+            }
+            if (EventGate.disabled(event)) {
+                return;
+            }
+            if (deniedCrossing(mount, event.getFrom(), event.getTo())) {
+                event.setCancelled(true);
+            }
         }
-        final Entity mount = event.getEntity();
-        if (!riddenMounts.contains(mount.getUniqueId())) {
-            return;
-        }
-        if (EventGate.disabled(event)) {
-            return;
-        }
-        if (deniedCrossing(mount, event.getFrom(), event.getTo())) {
-            event.setCancelled(true);
-        }
+    }
+
+    /**
+     * Brings the {@link MountMoves} registration in line with whether anything is being ridden.
+     *
+     * <p>The decision is made on the global region thread rather than by the caller: mounts and
+     * dismounts arrive on region threads that can interleave, and settling it in one place means a
+     * dismount racing a mount cannot leave the handler registered with nobody riding, or vice versa.
+     * {@code mountMovesRegistered} is only ever touched there, so it needs no synchronization.
+     */
+    private void syncMountMoves() {
+        plugin.getServer().getGlobalRegionScheduler().execute(plugin, () -> {
+            final boolean wanted = !riddenMounts.isEmpty();
+            if (wanted == mountMovesRegistered) {
+                return;
+            }
+            mountMovesRegistered = wanted;
+            if (wanted) {
+                plugin.getServer().getPluginManager().registerEvents(mountMoves, plugin);
+            } else {
+                HandlerList.unregisterAll(mountMoves);
+            }
+        });
     }
 
     /**
@@ -461,7 +532,9 @@ public final class MovementListener implements Listener {
         }
         final List<Entity> passengers = vehicle.getPassengers();
         if (passengers.isEmpty()) {
-            riddenMounts.remove(vehicle.getUniqueId());
+            if (riddenMounts.remove(vehicle.getUniqueId())) {
+                syncMountMoves();
+            }
             return false;
         }
 
@@ -553,7 +626,9 @@ public final class MovementListener implements Listener {
                 return;
             }
         }
-        riddenMounts.add(mount.getUniqueId());
+        if (riddenMounts.add(mount.getUniqueId())) {
+            syncMountMoves();
+        }
     }
 
     /**
@@ -573,10 +648,32 @@ public final class MovementListener implements Listener {
                 return;
             }
         }
-        riddenMounts.remove(mount.getUniqueId());
+        if (riddenMounts.remove(mount.getUniqueId())) {
+            syncMountMoves();
+        }
+    }
+
+    /**
+     * Announces a crossing to other plugins, allocating the event only when something is listening.
+     *
+     * <p>This runs per region crossed on a movement path, so the empty case has to cost nothing:
+     * {@code callEvent} on a handler list with no listeners still does work, and the event object
+     * itself is the allocation worth avoiding on a server where no plugin uses these at all.
+     */
+    private static void fireEnter(final Player player, final ProtectedRegion region) {
+        if (RegionEnterEvent.getHandlerList().getRegisteredListeners().length != 0) {
+            Bukkit.getPluginManager().callEvent(new RegionEnterEvent(player, region));
+        }
+    }
+
+    private static void fireExit(final Player player, final ProtectedRegion region) {
+        if (RegionExitEvent.getHandlerList().getRegisteredListeners().length != 0) {
+            Bukkit.getPluginManager().callEvent(new RegionExitEvent(player, region));
+        }
     }
 
     private void onEnterRegion(final Player player, final ProtectedRegion region) {
+        fireEnter(player, region);
         final String greeting = region.getFlag(Flags.GREETING);
         if (greeting != null) {
             player.sendMessage(messages.render(greeting, player));
@@ -593,6 +690,7 @@ public final class MovementListener implements Listener {
     }
 
     private void onLeaveRegion(final Player player, final ProtectedRegion region) {
+        fireExit(player, region);
         final String farewell = region.getFlag(Flags.FAREWELL);
         if (farewell != null) {
             player.sendMessage(messages.render(farewell, player));
@@ -901,17 +999,21 @@ public final class MovementListener implements Listener {
             }
         }
 
-        if (toSet.worldUses(Flags.FLY) && Boolean.TRUE.equals(toSet.queryValue(Flags.FLY))) {
-            if (!player.getAllowFlight()) {
-                owedChanged |= savedAllowFlight.putIfAbsent(uuid, Boolean.FALSE) == null;
-                player.setAllowFlight(true);
+        final Boolean allowFly = toSet.worldUses(Flags.FLY) ? toSet.queryValue(Flags.FLY) : null;
+        if (allowFly != null) {
+            if (player.getAllowFlight() != allowFly) {
+                owedChanged |= savedAllowFlight.putIfAbsent(uuid, player.getAllowFlight()) == null;
+                player.setAllowFlight(allowFly);
+                if (!allowFly && player.isFlying()) {
+                    player.setFlying(false);
+                }
             }
         } else if (!savedAllowFlight.isEmpty()) {
             final Boolean saved = savedAllowFlight.remove(uuid);
             if (saved != null) {
                 owedChanged = true;
-                if (!saved) {
-                    player.setAllowFlight(false);
+                if (player.getAllowFlight() != saved) {
+                    player.setAllowFlight(saved);
                 }
             }
         }
@@ -980,6 +1082,9 @@ public final class MovementListener implements Listener {
     public void onJoin(final PlayerJoinEvent event) {
         final Player joiner = event.getPlayer();
 
+        if (taskMode) {
+            startPoll(joiner);
+        }
         replayPendingRestore(joiner);
         if (SessionDispatch.ACTIVE) {
             SessionDispatch.initialize(joiner);
@@ -1056,6 +1161,7 @@ public final class MovementListener implements Listener {
     public void onQuit(final PlayerQuitEvent event) {
         final Player player = event.getPlayer();
         final UUID uuid = player.getUniqueId();
+        stopPoll(uuid);
         if (SessionDispatch.TRACKING) {
             SessionDispatch.uninitialize(player);
         }

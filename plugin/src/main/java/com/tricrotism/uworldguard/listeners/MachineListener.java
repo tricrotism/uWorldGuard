@@ -160,7 +160,7 @@ public final class MachineListener implements Listener {
             }
             return;
         }
-        if (set.testState(Flags.VAULT_USE, player.getUniqueId()) || Bypass.has(player)) {
+        if (set.testBuild(player.getUniqueId(), Flags.VAULT_USE) || Bypass.has(player)) {
             return;
         }
         event.setCancelled(true);

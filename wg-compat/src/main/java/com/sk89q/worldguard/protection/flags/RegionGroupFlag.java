@@ -16,11 +16,43 @@ import java.util.Locale;
  */
 public class RegionGroupFlag extends EnumFlag<RegionGroup> {
 
+    private static final String GROUP_SUFFIX = "-group";
+
     private final RegionGroup def;
+    /**
+     * The engine flag this qualifies, resolved on first use. Reading a group qualifier off a region
+     * happens once per region per flag on every consumer query that uses one, and working the owner
+     * out from the name allocates a substring and then looks it up by name. Only a hit is kept: a
+     * flag whose plugin has not registered yet resolves again next time, which is what lets a
+     * consumer flag start working the moment it registers.
+     */
+    private volatile com.tricrotism.uworldguard.flags.Flag<?> uwgOwner;
 
     public RegionGroupFlag(final String name, final RegionGroup def) {
         super(name, RegionGroup.class);
         this.def = def;
+    }
+
+    /**
+     * Internal: the engine flag this {@code <name>-group} qualifier belongs to, or {@code null} when
+     * that flag is not bridged.
+     */
+    public final com.tricrotism.uworldguard.flags.Flag<?> uwgOwner() {
+        final com.tricrotism.uworldguard.flags.Flag<?> cached = uwgOwner;
+        if (cached != null) {
+            return cached;
+        }
+        final String name = getName();
+        if (name == null || !name.endsWith(GROUP_SUFFIX)) {
+            return null;
+        }
+        final com.tricrotism.uworldguard.flags.Flag<?> resolved =
+            com.tricrotism.uworldguard.flags.WgFlagNames.resolve(
+                name.substring(0, name.length() - GROUP_SUFFIX.length()));
+        if (resolved != null) {
+            uwgOwner = resolved;
+        }
+        return resolved;
     }
 
     @Override

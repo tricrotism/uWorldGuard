@@ -1,5 +1,7 @@
 package com.tricrotism.uworldguard.region;
 
+import com.tricrotism.uworldguard.event.RegionsLoadedEvent;
+import com.tricrotism.uworldguard.event.RegionsUnloadedEvent;
 import com.tricrotism.uworldguard.storage.RegionStore;
 import com.tricrotism.uworldguard.util.VerboseLogging;
 import org.bukkit.Bukkit;
@@ -8,10 +10,7 @@ import org.bukkit.plugin.Plugin;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
@@ -35,6 +34,13 @@ public final class RegionContainerImpl implements RegionContainer {
     private final Plugin plugin;
     private final RegionStore store;
     private final Map<UUID, Loaded> loaded = new ConcurrentHashMap<>();
+    /**
+     * The managers in {@link #loaded}, republished whenever that map changes. {@link #anyRegionUses}
+     * runs on hot event paths — hopper transfers, entity spawns, item use — and iterating the map
+     * there allocates an iterator per call for a walk over two or three worlds. Reading a snapshot
+     * array allocates nothing.
+     */
+    private volatile RegionManager[] managers = new RegionManager[0];
     private final Set<String> failedLoads = ConcurrentHashMap.newKeySet();
     /**
      * Worlds whose async populate is still in flight. The publish at the end of {@link #load} claims
@@ -44,14 +50,37 @@ public final class RegionContainerImpl implements RegionContainer {
      */
     private final Set<UUID> loading = ConcurrentHashMap.newKeySet();
     /**
-     * One monitor per world, held across its {@link RegionStore#save} call. Three writers can reach
-     * the same world's document — the autosave, the shutdown save, and a world unload — and the YAML
-     * backend stages every write through one fixed temp path per world, so two overlapping saves
-     * interleave their writes and the first move promotes a torn document over the live file. That
-     * file then fails to parse at next boot, which also disables saving for the world. Same shape as
+     * Monitors guarding store access, one per world name by hash. Three writers can reach the same
+     * world's document — the autosave, the shutdown save, and a world unload — and the YAML backend
+     * stages every write through one fixed temp path per world, so two overlapping saves interleave
+     * their writes and the first move promotes a torn document over the live file. That file then
+     * fails to parse at next boot, which also disables saving for the world. Same shape as
      * {@code MessageService}'s messages.yml lock.
+     *
+     * <p>Reads take it too. A world unloaded and loaded again — {@code /mv unload} then
+     * {@code /mv load}, or a per-match world being recycled — queues the unload's save and the load's
+     * read on the async scheduler with no ordering between them, and a read that wins that race
+     * returns the document as it stood before the unload. Every edit since the last autosave is then
+     * silently back, and the next autosave writes the reverted state over the good one.
+     *
+     * <p>A fixed set of stripes rather than a monitor per name: two worlds sharing a stripe only ever
+     * wait for each other on the async scheduler, whereas a map keyed by name has to answer what
+     * removes an entry, and removing one is exactly what reopens the race above.
      */
-    private final Map<String, Object> saveLocks = new ConcurrentHashMap<>();
+    private static final int STORE_LOCKS = 16;
+    private final Object[] storeLocks = newStoreLocks();
+
+    private static Object[] newStoreLocks() {
+        final Object[] locks = new Object[STORE_LOCKS];
+        for (int i = 0; i < STORE_LOCKS; i++) {
+            locks[i] = new Object();
+        }
+        return locks;
+    }
+
+    private Object storeLock(final String world) {
+        return storeLocks[Math.floorMod(world.hashCode(), STORE_LOCKS)];
+    }
 
     public RegionContainerImpl(final Plugin plugin, final RegionStore store) {
         this.plugin = plugin;
@@ -72,7 +101,9 @@ public final class RegionContainerImpl implements RegionContainer {
             final RegionManager manager = new RegionManager();
             final String name = world.getName();
             try {
-                store.load(name, manager);
+                synchronized (storeLock(name)) {
+                    store.load(name, manager);
+                }
             } catch (final Exception e) {
                 failedLoads.add(name);
                 plugin.getLogger().log(Level.SEVERE, "Failed to load regions for world " + name
@@ -83,7 +114,9 @@ public final class RegionContainerImpl implements RegionContainer {
             }
             manager.clearDirty();
             loaded.put(world.getUID(), new Loaded(name, manager));
+            republishManagers();
             warnAboutUnenforcedGroups(name, manager);
+            Bukkit.getPluginManager().callEvent(new RegionsLoadedEvent(world, manager));
         }
     }
 
@@ -104,7 +137,9 @@ public final class RegionContainerImpl implements RegionContainer {
         loading.add(uid);
         plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
             try {
-                store.load(name, manager);
+                synchronized (storeLock(name)) {
+                    store.load(name, manager);
+                }
                 failedLoads.remove(name);
             } catch (final Exception e) {
                 failedLoads.add(name);
@@ -119,7 +154,10 @@ public final class RegionContainerImpl implements RegionContainer {
                 return;
             }
             loaded.put(uid, new Loaded(name, manager));
+            republishManagers();
+            FlagLifecycle.resolvePending(manager);
             warnAboutUnenforcedGroups(name, manager);
+            Bukkit.getPluginManager().callEvent(new RegionsLoadedEvent(world, manager));
         });
         return manager;
     }
@@ -156,7 +194,9 @@ public final class RegionContainerImpl implements RegionContainer {
     public void unload(final World world) {
         loading.remove(world.getUID());
         final Loaded removed = loaded.remove(world.getUID());
+        republishManagers();
         if (removed != null) {
+            Bukkit.getPluginManager().callEvent(new RegionsUnloadedEvent(world, removed.manager()));
             saveAsync(removed.name(), removed.manager(), () -> {});
         }
     }
@@ -184,7 +224,7 @@ public final class RegionContainerImpl implements RegionContainer {
             }
             final RegionManager manager = world.manager();
             try {
-                synchronized (saveLocks.computeIfAbsent(name, k -> new Object())) {
+                synchronized (storeLock(name)) {
                     store.save(name, manager);
                 }
             } catch (final Exception e) {
@@ -207,7 +247,7 @@ public final class RegionContainerImpl implements RegionContainer {
         }
         plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
             try {
-                synchronized (saveLocks.computeIfAbsent(name, k -> new Object())) {
+                synchronized (storeLock(name)) {
                     store.save(name, manager);
                 }
             } catch (final Exception e) {
@@ -223,17 +263,43 @@ public final class RegionContainerImpl implements RegionContainer {
         return found == null ? null : found.manager();
     }
 
+    @Override
+    public @Nullable RegionEditor editor(final World world) {
+        final RegionManager manager = get(world);
+        return manager == null ? null : new RegionEditorImpl(world, manager);
+    }
+
     /**
      * Whether any loaded world has a region setting {@code flag}. Cheap to poll: each manager
      * answers from a cached index. Lets periodic tasks skip work entirely when a flag is unused.
      */
     public boolean anyRegionUses(final com.tricrotism.uworldguard.flags.Flag<?> flag) {
-        for (final Loaded world : loaded.values()) {
-            if (world.manager().anyRegionUses(flag)) {
+        final RegionManager[] snapshot = managers;
+        for (int i = 0; i < snapshot.length; i++) {
+            if (snapshot[i].anyRegionUses(flag)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Every loaded world's manager, as of the last load or unload. Immutable.
+     */
+    public List<RegionManager> managers() {
+        return List.of(managers);
+    }
+
+    /**
+     * Rebuilds the {@link #managers} snapshot. Called after every {@link #loaded} mutation; world
+     * loads and unloads are rare enough that rebuilding beats keeping the two in step incrementally.
+     */
+    private void republishManagers() {
+        final List<RegionManager> snapshot = new ArrayList<>(loaded.size());
+        for (final Loaded world : loaded.values()) {
+            snapshot.add(world.manager());
+        }
+        managers = snapshot.toArray(new RegionManager[0]);
     }
 
     @Override

@@ -46,7 +46,7 @@ public final class VehicleListener implements Listener {
         if (player == null) {
             return;
         }
-        if (!query.getApplicableRegions(vehicle).testState(Flags.VEHICLE_PLACE, player.getUniqueId())) {
+        if (!query.getApplicableRegions(vehicle).testBuild(player.getUniqueId(), Flags.VEHICLE_PLACE)) {
             if (Bypass.has(player)) {
                 return;
             }
@@ -68,7 +68,7 @@ public final class VehicleListener implements Listener {
         final Vehicle vehicle = event.getVehicle();
         final Player attacker = resolvePlayer(event.getAttacker());
         final boolean allowed = attacker != null
-            ? query.getApplicableRegions(vehicle).testState(Flags.VEHICLE_DESTROY, attacker.getUniqueId())
+            ? query.getApplicableRegions(vehicle).testBuild(attacker.getUniqueId(), Flags.VEHICLE_DESTROY)
             : query.testState(vehicle, Flags.VEHICLE_DESTROY);
         if (allowed) {
             return;

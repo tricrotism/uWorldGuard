@@ -23,11 +23,10 @@ dependencies {
 
     implementation(libs.bstats.bukkit)
 
-    // Cloud + Caffeine — downloaded at boot by the PluginLoader (UWorldGuardLoader), not shaded.
+    // Cloud — downloaded at boot by the PluginLoader (UWorldGuardLoader), not shaded.
     compileOnly(libs.cloud.paper)
     compileOnly(libs.cloud.annotations)
     annotationProcessor(libs.cloud.annotations)
-    compileOnly(libs.caffeine)
 
     // PacketEvents — provided by the server plugin at runtime.
     compileOnly(libs.packetevents.spigot)
@@ -43,6 +42,22 @@ dependencies {
     // are provided by the server (and conflict with Paper's strict versions otherwise).
     compileOnly(libs.worldedit.bukkit) { isTransitive = false }
     compileOnly(libs.worldedit.core) { isTransitive = false }
+
+    // MockBukkit runs the tests against a mock server, so listeners and services are exercised
+    // without a Paper process. Its artifact id is pinned to the API version we compile against.
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.mockbukkit)
+    testImplementation("io.papermc.paper:paper-api:${libs.versions.paper.api.get()}")
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+// MockBukkit has to be the only Bukkit implementation the tests can see. With paperweight's
+// mojang-mapped server on the test classpath, org.bukkit.Registry initialises against the real
+// server's registry access and every mock fails before the first assertion, so the server jar
+// stays on compileOnly and the tests compile and run against paper-api.
+paperweight {
+    addServerDependencyTo = setOf(configurations.compileOnly.get())
 }
 
 java {
@@ -50,6 +65,10 @@ java {
 }
 
 tasks {
+    test {
+        useJUnitPlatform()
+    }
+
     // Bundle the API module's classes into the plugin jar so dependent plugins resolve
     // them at runtime from uWorldGuard's classloader.
     named<Jar>("jar") {

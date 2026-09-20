@@ -66,8 +66,9 @@ public final class FlagGroupSupport {
         Flags.PERMIT_WORKBENCHES,
         // WorkbenchListener.onCraft
         Flags.INVENTORY_CRAFT,
-        // CropTrampleListener.onPlayerTrample
+        // CropTrampleListener.onPlayerTrample / onEntityTrample
         Flags.CROP_TRAMPLE,
+        Flags.EGG_TRAMPLE,
         // NaturalListener.onForm
         Flags.FROSTWALKER,
         // ItemUseListener.onTrade
@@ -75,7 +76,32 @@ public final class FlagGroupSupport {
         // EndCrystalListener.onPlace
         Flags.END_CRYSTAL_PLACE,
         // EndCrystalListener.onAttack
-        Flags.END_CRYSTAL_INTERACT
+        Flags.END_CRYSTAL_INTERACT,
+        // WorldEditFlagGuard.onEditSession
+        Flags.WORLDEDIT,
+        // InteractionListener.deny / denyAt
+        Flags.SHEAR,
+        Flags.LEASH,
+        Flags.NAME_ENTITY,
+        Flags.BUCKET_ENTITY,
+        Flags.ARMOR_STAND_MANIPULATE,
+        Flags.MANNEQUIN_MANIPULATE,
+        Flags.FLOWER_POT,
+        Flags.LECTERN,
+        Flags.SIGN_EDIT,
+        // VehicleListener
+        Flags.VEHICLE_PLACE,
+        Flags.VEHICLE_DESTROY,
+        // EntityListener.onEntityDamage / onHangingBreak
+        Flags.DAMAGE_ANIMALS,
+        Flags.ENTITY_ITEM_FRAME_DESTROY,
+        Flags.ENTITY_PAINTING_DESTROY,
+        // InteractionListener.onItemFrame
+        Flags.ITEM_FRAME_ROTATION,
+        // MachineListener.onVault
+        Flags.VAULT_USE,
+        // PlayerStateListener.onChestAccess (the respawn-anchor branch)
+        Flags.RESPAWN_ANCHORS
     );
 
     /**

@@ -13,7 +13,7 @@ import com.sk89q.worldedit.world.block.BlockStateHolder;
 import com.tricrotism.uworldguard.config.Bypass;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
-import com.tricrotism.uworldguard.region.RegionQuery;
+import com.tricrotism.uworldguard.region.RegionManager;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
@@ -26,19 +26,18 @@ import java.util.UUID;
  * block inside any region where worldedit=DENY. Only constructed when WorldEdit is installed (see
  * {@code UWorldGuard}), so its classes never load otherwise.
  *
- * <p>The wrap is installed once per edit session at the change stage, and only when some region
- * actually uses the flag and the actor is a non-bypassing player — so a server without the flag in
- * use, or an admin with bypass, pays nothing. Region reads go through the thread-safe
- * {@link RegionQuery}; the Bukkit world is resolved once per session, not per block.
+ * <p>The wrap is installed once per edit session at the change stage, and only when a region in the
+ * edited world uses the flag and the actor is a non-bypassing player. A world without the flag, or an
+ * admin with bypass, pays nothing: the flag defaults to allow, so skipping the wrap there answers
+ * exactly what every block would have. The world's manager is resolved once per session rather than
+ * once per block, which on a million-block {@code //set} is a million map lookups saved.
  */
 @NullMarked
 public final class WorldEditFlagGuard {
 
-    private final RegionQuery query;
     private final RegionContainerImpl container;
 
-    public WorldEditFlagGuard(final RegionQuery query, final RegionContainerImpl container) {
-        this.query = query;
+    public WorldEditFlagGuard(final RegionContainerImpl container) {
         this.container = container;
     }
 
@@ -74,11 +73,16 @@ public final class WorldEditFlagGuard {
             return;
         }
         final World world = BukkitAdapter.adapt(event.getWorld());
+        final RegionManager manager = container.get(world);
+        if (manager == null || !manager.anyRegionUses(Flags.WORLDEDIT)) {
+            return;
+        }
         event.setExtent(new AbstractDelegateExtent(event.getExtent()) {
             @Override
             public <B extends BlockStateHolder<B>> boolean setBlock(final BlockVector3 pos, final B block)
                 throws WorldEditException {
-                if (!query.getApplicableRegions(world, pos.x(), pos.y(), pos.z()).testState(Flags.WORLDEDIT)) {
+                if (!manager.getApplicableRegions(pos.x(), pos.y(), pos.z())
+                    .testState(Flags.WORLDEDIT, uuid)) {
                     return false;
                 }
                 return super.setBlock(pos, block);

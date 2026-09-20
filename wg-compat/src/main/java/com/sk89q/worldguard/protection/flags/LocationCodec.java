@@ -22,6 +22,14 @@ public final class LocationCodec {
     private LocationCodec() {
     }
 
+    /**
+     * The WorldEdit world by that name, or {@code null} when no world of that name is loaded.
+     */
+    public static com.sk89q.worldedit.world.World worldByName(final String name) {
+        final org.bukkit.World world = name == null ? null : org.bukkit.Bukkit.getWorld(name);
+        return world == null ? null : BukkitAdapter.adapt(world);
+    }
+
     public static Location fromString(final String raw) {
         if (raw == null) {
             return null;

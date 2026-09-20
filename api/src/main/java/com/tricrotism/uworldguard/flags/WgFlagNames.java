@@ -3,6 +3,8 @@ package com.tricrotism.uworldguard.flags;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -12,6 +14,11 @@ import java.util.Map;
  * layer. Only exact behavioral equivalents belong here; a flag whose uWorldGuard
  * counterpart is broader or narrower is deliberately left unmapped rather than silently
  * widened.
+ *
+ * <p>One WorldGuard flag can cover ground uWorldGuard splits in two. Such a flag names its main
+ * counterpart in the alias table and the rest in {@link #COMPANIONS}. The importer writes the
+ * stored value to every one of them, so migrating loses nothing. The runtime API binds the shim to
+ * the main counterpart alone, because one flag cannot delegate to two.
  */
 @NullMarked
 public final class WgFlagNames {
@@ -27,7 +34,36 @@ public final class WgFlagNames {
         "spawn", "respawn-location"
     );
 
+    /**
+     * The uWorldGuard flags a WorldGuard flag also covers, beyond the one the alias table names.
+     * WorldGuard's {@code block-trampling} governs farmland and eggs together. uWorldGuard keeps
+     * them apart so a region can protect one without the other.
+     */
+    private static final Map<String, List<String>> COMPANIONS = Map.of(
+        "block-trampling", List.of("egg-trample")
+    );
+
     private WgFlagNames() {
+    }
+
+    /**
+     * The flags a stored WorldGuard value has to be written to as well as {@link #resolve}'s, so a
+     * migrated region keeps everything the WorldGuard flag was protecting. Empty for almost every
+     * name.
+     */
+    public static List<Flag<?>> companions(final String wgName) {
+        final List<String> names = COMPANIONS.get(wgName.toLowerCase(Locale.ROOT));
+        if (names == null) {
+            return List.of();
+        }
+        final List<Flag<?>> flags = new ArrayList<>(names.size());
+        for (final String name : names) {
+            final Flag<?> flag = Flags.get(name);
+            if (flag != null) {
+                flags.add(flag);
+            }
+        }
+        return flags;
     }
 
     /**

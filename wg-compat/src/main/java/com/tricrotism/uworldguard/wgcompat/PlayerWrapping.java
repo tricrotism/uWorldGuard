@@ -5,8 +5,6 @@
 
 package com.tricrotism.uworldguard.wgcompat;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
@@ -16,8 +14,9 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Builds {@code com.sk89q.worldguard.LocalPlayer} instances.
@@ -41,13 +40,16 @@ public final class PlayerWrapping {
     private static final Class<?>[] INTERFACES = {LOCAL_PLAYER, UuidSubject.class};
 
     /**
-     * Time-bounded rather than reference-bounded: nothing else holds a wrapper strongly, so weak
-     * values would be collected between calls and defeat the cache. Staleness is handled by the
-     * identity check in {@link #wrap(Player)}, not by the expiry.
+     * Bounded by who is online: {@link #forget} drops a player's wrapper on quit, which is also what
+     * keeps their {@code Player} from being reachable through it. Staleness — a reconnect building a
+     * new {@code Player} for the same id — is caught by the identity check in {@link #wrap(Player)}.
+     *
+     * <p>A plain map rather than an evicting cache because this is read on every flag query a
+     * consumer makes through the WorldGuard API: an evicting cache records each read into a buffer
+     * whose drain submits to the common pool and unparks a worker, which costs more than everything
+     * the wrapper does.
      */
-    private static final Cache<UUID, LocalBukkitPlayer> CACHE = Caffeine.newBuilder()
-        .expireAfterAccess(10, TimeUnit.MINUTES)
-        .build();
+    private static final Map<UUID, LocalBukkitPlayer> CACHE = new ConcurrentHashMap<>();
 
     private PlayerWrapping() {
     }
@@ -59,7 +61,7 @@ public final class PlayerWrapping {
      */
     public static Object wrap(final Player player) {
         final UUID uniqueId = player.getUniqueId();
-        final LocalBukkitPlayer cached = CACHE.getIfPresent(uniqueId);
+        final LocalBukkitPlayer cached = CACHE.get(uniqueId);
         if (cached != null && cached.bukkit() == player) {
             return cached;
         }
@@ -84,12 +86,12 @@ public final class PlayerWrapping {
     }
 
     /**
-     * Drops the wrapper held for a player who has left. The expiry alone would release it eventually,
-     * but until then the wrapper holds their {@code Player}, and through it the server's whole
-     * entity and inventory graph for someone no longer on the server.
+     * Drops the wrapper held for a player who has left. This is the only thing that releases one: the
+     * wrapper holds their {@code Player}, and through it the server's whole entity and inventory
+     * graph for someone no longer on the server.
      */
     public static void forget(final UUID uniqueId) {
-        CACHE.invalidate(uniqueId);
+        CACHE.remove(uniqueId);
     }
 
     /**

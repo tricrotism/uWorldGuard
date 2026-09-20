@@ -5,11 +5,13 @@ import com.tricrotism.uworldguard.commands.RegionCommands;
 import com.tricrotism.uworldguard.config.*;
 import com.tricrotism.uworldguard.gui.ChatInputListener;
 import com.tricrotism.uworldguard.gui.ChatInputService;
+import com.tricrotism.uworldguard.integration.BStats;
 import com.tricrotism.uworldguard.integration.ReportedVersion;
 import com.tricrotism.uworldguard.listeners.*;
 import com.tricrotism.uworldguard.migration.MigrationCommands;
 import com.tricrotism.uworldguard.packet.PacketHooks;
 import com.tricrotism.uworldguard.packet.PacketSink;
+import com.tricrotism.uworldguard.region.FlagLifecycle;
 import com.tricrotism.uworldguard.region.RegionContainer;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
 import com.tricrotism.uworldguard.region.RegionQuery;
@@ -21,11 +23,12 @@ import com.tricrotism.uworldguard.storage.SqlRegionStore;
 import com.tricrotism.uworldguard.storage.YamlRegionStore;
 import com.tricrotism.uworldguard.text.ChatTags;
 import com.tricrotism.uworldguard.text.MessageService;
+import com.tricrotism.uworldguard.text.Messages;
 import com.tricrotism.uworldguard.wgcompat.FlagBridge;
 import com.tricrotism.uworldguard.wgcompat.SessionDispatch;
 import com.tricrotism.uworldguard.wgcompat.WgCompatBridge;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
-import org.bstats.bukkit.Metrics;
+import org.bstats.MetricsBase;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.ServicePriority;
 import org.jspecify.annotations.NullMarked;
@@ -46,8 +49,10 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
     private @Nullable CollisionService collision;
     private @Nullable WorldEditFlagGuard worldEditGuard;
     private @Nullable RegionStore store;
-    private @Nullable Metrics metrics;
+    private @Nullable MetricsBase metrics;
     private volatile @Nullable ScheduledTask autoSaveTask;
+    private volatile @Nullable ScheduledTask messageExpiryTask;
+    private @Nullable FlagLifecycle flagLifecycle;
     private @Nullable PlayerTickService playerTick;
     private @Nullable ChunkUnloadService chunkUnload;
     private @Nullable PendingRestores restores;
@@ -66,6 +71,7 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         }
         EventGate.load(getConfig(), getLogger());
         InteractionWhitelist.load(getConfig(), getLogger());
+        Messages.expire();
         final MovementListener listener = this.movement;
         if (listener != null && current != null) {
             listener.applySettings(current);
@@ -122,6 +128,12 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         final Settings settings = new Settings();
         settings.load(getConfig());
         this.settings = settings;
+        if (!settings.membershipGrantsTrust()) {
+            getLogger().warning("regions.membership-grants-trust is off: region owners and members"
+                + " are not trusted anywhere. Protection is flag-only, so a region without a build"
+                + " flag now denies every player including its owner. Set it back to true to"
+                + " restore the stored trust lists, which are kept either way.");
+        }
         EventGate.load(getConfig(), getLogger());
         InteractionWhitelist.load(getConfig(), getLogger());
         final boolean worldGuardCompat = prepareWorldGuardCompat();
@@ -132,10 +144,15 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         final RegionContainerImpl regionContainer = new RegionContainerImpl(this, store);
         regionContainer.loadAll();
         this.container = regionContainer;
+        final FlagLifecycle flagLifecycle = new FlagLifecycle(this, regionContainer);
+        flagLifecycle.install();
+        this.flagLifecycle = flagLifecycle;
+        getServer().getPluginManager().registerEvents(flagLifecycle, this);
 
         getServer().getServicesManager().register(
             RegionContainer.class, regionContainer, this, ServicePriority.Normal);
         UWorldGuardApi.bind(regionContainer);
+        UWorldGuardApi.bindBypass(Bypass::has);
         if (worldGuardCompat) {
             activateWorldGuardCompat(regionContainer);
         }
@@ -168,7 +185,7 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         getServer().getPluginManager().registerEvents(new WorkbenchListener(query, messages), this);
         getServer().getPluginManager().registerEvents(new DeathListener(query, messages), this);
         getServer().getPluginManager().registerEvents(new TravelListener(query), this);
-        getServer().getPluginManager().registerEvents(new PearlListener(pearls), this);
+        getServer().getPluginManager().registerEvents(new PearlListener(regionContainer, pearls), this);
         getServer().getPluginManager().registerEvents(new ChatInputListener(this, chatInput), this);
         final ChunkUnloadService chunkUnload = new ChunkUnloadService(this, regionContainer);
         this.chunkUnload = chunkUnload;
@@ -197,19 +214,21 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         chunkUnload.start();
 
         if (getServer().getPluginManager().getPlugin("WorldEdit") != null) {
-            final WorldEditFlagGuard guard = new WorldEditFlagGuard(query, regionContainer);
+            final WorldEditFlagGuard guard = new WorldEditFlagGuard(regionContainer);
             guard.register();
             this.worldEditGuard = guard;
         }
 
         scheduleAutoSave(settings);
+        this.messageExpiryTask = getServer().getAsyncScheduler().runAtFixedRate(this,
+            _ -> Messages.expire(), Messages.EXPIRE_MINUTES, Messages.EXPIRE_MINUTES, TimeUnit.MINUTES);
 
         if (settings.updateCheck()) {
             new UpdateChecker(this).start();
         }
 
         // bStats | https://bstats.org/plugin/bukkit/uWorldGuard/32190
-        this.metrics = new Metrics(this, 32190);
+        this.metrics = BStats.start(this, 32190);
     }
 
     /**
@@ -246,7 +265,7 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
                 + " installed. Plugins that require WorldGuard will not function.");
             return false;
         }
-        FlagBridge.registerDormantFlags();
+        FlagBridge.bindFlags();
         return true;
     }
 
@@ -302,6 +321,10 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
      * plugins and a third-party packet library on a server that is already tearing down, and any one
      * of them throwing used to take the region save with it — an unclean shutdown lost every change
      * made since the last autosave.
+     *
+     * <p>Cancelling comes first for the same reason. The compat layer hands control to other people's
+     * code, and on a plugin-only disable — a hot swap, or a plugin manager — one throw in there used
+     * to leave the autosave and the per-player ticks running against a plugin that no longer exists.
      */
     @Override
     public void onDisable() {
@@ -320,13 +343,15 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
     }
 
     private void releaseRuntime() {
-        SessionDispatch.shutdown();
-        WgCompatBridge.unbind();
-        UWorldGuardApi.bind(null);
         final ScheduledTask autoSave = this.autoSaveTask;
         if (autoSave != null) {
             autoSave.cancel();
             this.autoSaveTask = null;
+        }
+        final ScheduledTask messageExpiry = this.messageExpiryTask;
+        if (messageExpiry != null) {
+            messageExpiry.cancel();
+            this.messageExpiryTask = null;
         }
         if (playerTick != null) {
             playerTick.stop();
@@ -342,6 +367,16 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         }
         if (movement != null) {
             movement.stop();
+        }
+        if (flagLifecycle != null) {
+            flagLifecycle.uninstall();
+            flagLifecycle = null;
+        }
+        SessionDispatch.shutdown();
+        WgCompatBridge.unbind();
+        UWorldGuardApi.bind(null);
+        UWorldGuardApi.bindBypass(null);
+        if (movement != null) {
             movement.shutdown();
         }
         if (worldEditGuard != null) {

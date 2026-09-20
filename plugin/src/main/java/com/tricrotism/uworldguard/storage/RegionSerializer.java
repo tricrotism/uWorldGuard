@@ -61,6 +61,7 @@ public final class RegionSerializer {
 
         final Map<String, String> parents = new HashMap<>();
         final Map<String, Integer> droppedFlags = new TreeMap<>();
+        final Map<String, Integer> unresolvedFlags = new TreeMap<>();
         for (final String id : root.getKeys(false)) {
             final ConfigurationSection sec = root.getConfigurationSection(id);
             if (sec == null) {
@@ -76,7 +77,7 @@ public final class RegionSerializer {
             region.setPriority(sec.getInt("priority", 0));
             readDomain(sec.getConfigurationSection("owners"), region.getOwners(), id, "owners");
             readDomain(sec.getConfigurationSection("members"), region.getMembers(), id, "members");
-            readFlags(sec.getConfigurationSection("flags"), region, droppedFlags);
+            readFlags(sec.getConfigurationSection("flags"), region, droppedFlags, unresolvedFlags);
             final String parent = sec.getString("parent");
             if (parent != null) {
                 parents.put(id.toLowerCase(Locale.ROOT), parent);
@@ -107,9 +108,12 @@ public final class RegionSerializer {
         if (!droppedFlags.isEmpty()) {
             LOG.warning("Dropped " + droppedFlags.values().stream().mapToInt(Integer::intValue).sum()
                 + " stored flag value(s) this build cannot read: " + droppedFlags
-                + ". The next save writes those regions without them. A flag another plugin"
-                + " registers is only known once that plugin has loaded, so this can mean a missing"
-                + " or late plugin rather than bad data. Check before saving over it.");
+                + ". The next save writes those regions without them. Check before saving over it.");
+        }
+        if (!unresolvedFlags.isEmpty()) {
+            LOG.info("Kept " + unresolvedFlags.values().stream().mapToInt(Integer::intValue).sum()
+                + " stored value(s) for flags no plugin has registered yet: " + unresolvedFlags
+                + ". They are saved unchanged and take effect when a plugin registers those flags.");
         }
         manager.clearDirty();
     }
@@ -185,6 +189,9 @@ public final class RegionSerializer {
         writeDomain(sec.createSection("owners"), region.getOwners());
         writeDomain(sec.createSection("members"), region.getMembers());
         final ConfigurationSection flagSec = sec.createSection("flags");
+        for (final Map.Entry<String, Object> e : region.getUnresolvedFlags().entrySet()) {
+            flagSec.set(e.getKey(), e.getValue());
+        }
         for (final Map.Entry<Flag<?>, Object> e : region.getFlags().entrySet()) {
             flagSec.set(e.getKey().getName(), marshal(e.getKey(), e.getValue()));
         }
@@ -199,11 +206,30 @@ public final class RegionSerializer {
     }
 
     /**
+     * A stored value detached from the document it was read from. A map-valued entry arrives as a
+     * section that links back to its parent, so keeping it as-is would keep the whole parsed file in
+     * memory for as long as the region lives.
+     */
+    private static Object plain(final Object raw) {
+        if (!(raw instanceof ConfigurationSection section)) {
+            return raw;
+        }
+        final Map<String, Object> out = new LinkedHashMap<>();
+        for (final String key : section.getKeys(false)) {
+            final Object value = section.get(key);
+            if (value != null) {
+                out.put(key, plain(value));
+            }
+        }
+        return out;
+    }
+
+    /**
      * @param dropped collects what could not be kept, counted by flag name, for the caller to report
      */
     private void readFlags(
         final @Nullable ConfigurationSection sec, final ProtectedRegion region,
-        final Map<String, Integer> dropped
+        final Map<String, Integer> dropped, final Map<String, Integer> unresolved
     ) {
         if (sec == null) {
             return;
@@ -212,7 +238,11 @@ public final class RegionSerializer {
             if (key.endsWith("-group")) {
                 final Flag<?> flag = Flags.get(key.substring(0, key.length() - "-group".length()));
                 final Object raw = sec.get(key);
-                if (flag == null || raw == null) {
+                if (raw == null) {
+                    continue;
+                }
+                if (flag == null) {
+                    region.putUnresolvedFlag(key, plain(raw));
                     continue;
                 }
                 final RegionGroup group = RegionGroup.parse(String.valueOf(raw));
@@ -225,7 +255,11 @@ public final class RegionSerializer {
             }
             final Flag<?> flag = Flags.get(key);
             if (flag == null) {
-                dropped.merge(key + " (no such flag)", 1, Integer::sum);
+                final Object raw = sec.get(key);
+                if (raw != null) {
+                    region.putUnresolvedFlag(key, plain(raw));
+                    unresolved.merge(key, 1, Integer::sum);
+                }
                 continue;
             }
             if (!applyFlag(region, flag, sec.get(key))) {
