@@ -15,11 +15,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import xyz.xenondevs.invui.gui.Markers;
 import xyz.xenondevs.invui.gui.PagedGui;
-import xyz.xenondevs.invui.gui.structure.Markers;
 import xyz.xenondevs.invui.item.Item;
-import xyz.xenondevs.invui.item.ItemProvider;
-import xyz.xenondevs.invui.item.builder.ItemBuilder;
+import xyz.xenondevs.invui.item.ItemBuilder;
 import xyz.xenondevs.invui.window.Window;
 
 import java.util.ArrayList;
@@ -52,7 +51,7 @@ public final class MembersMenu {
     }
 
     public void open(final Player player) {
-        final PagedGui<Item> built = PagedGui.items()
+        final PagedGui<Item> built = PagedGui.itemsBuilder()
             .setStructure(
                 "x x x x x x x x x",
                 "x x x x x x x x x",
@@ -70,11 +69,11 @@ public final class MembersMenu {
             .build();
         this.gui = built;
 
-        Window.single()
+        Window.builder()
             .setViewer(player)
-            .setTitle(MenuItems.wrap(Messages.format("<dark_gray>Members: <aqua><id>",
-                Placeholder.unparsed("id", region.getId()))))
-            .setGui(built)
+            .setTitle(Messages.format("<dark_gray>Members: <aqua><id>",
+                Placeholder.unparsed("id", region.getId())))
+            .setUpperGui(built)
             .build()
             .open();
     }
@@ -91,35 +90,38 @@ public final class MembersMenu {
     }
 
     private Item entry(final UUID uuid, final boolean owner) {
-        final ItemProvider provider = new ItemBuilder(Material.PLAYER_HEAD)
-            .setDisplayName(MenuItems.wrap(Messages.format("<!i><yellow><name>",
-                Placeholder.unparsed("name", nameOf(uuid)))))
-            .addLoreLines(
-                MenuItems.wrap(Messages.format(owner ? "<!i><gray>Owner" : "<!i><gray>Member")),
-                MenuItems.wrap(Messages.format("<!i><dark_gray>Click to remove")));
-        return MenuItems.clickable(() -> provider, (item, click) -> {
-            final Player clicker = click.getPlayer();
-            if (MenuItems.denied(clicker, MenuItems.MEMBERS)) {
-                return;
-            }
-            final EditResult result = new RegionEditorImpl(world, manager)
-                .removePlayer(region, role(owner), uuid, clicker);
-            if (result == EditResult.NOT_FOUND) {
-                clicker.sendMessage(Messages.format("<red>Region <aqua><id></aqua> no longer exists.",
-                    Placeholder.unparsed("id", regionId)));
-                return;
-            }
-            if (gui != null) {
-                gui.setContent(entries());
-            }
-        });
+        return Item.builder()
+            .setItemProvider(new ItemBuilder(Material.PLAYER_HEAD)
+                .setName(Messages.format("<!i><yellow><name>", Placeholder.unparsed("name", nameOf(uuid))))
+                .addLoreLines(
+                    Messages.format(owner ? "<!i><gray>Owner" : "<!i><gray>Member"),
+                    Messages.format("<!i><dark_gray>Click to remove")))
+            .addClickHandler((_, click) -> {
+                final Player clicker = click.player();
+                if (MenuItems.denied(clicker, MenuItems.MEMBERS)) {
+                    return;
+                }
+                final EditResult result = new RegionEditorImpl(world, manager)
+                    .removePlayer(region, role(owner), uuid, clicker);
+                if (result == EditResult.NOT_FOUND) {
+                    clicker.sendMessage(Messages.format("<red>Region <aqua><id></aqua> no longer exists.",
+                        Placeholder.unparsed("id", regionId)));
+                    return;
+                }
+                if (gui != null) {
+                    gui.setContent(entries());
+                }
+            })
+            .build();
     }
 
     private Item addItem(final boolean owner) {
-        final ItemProvider provider = new ItemBuilder(owner ? Material.GOLDEN_HELMET : Material.LEATHER_HELMET)
-            .setDisplayName(MenuItems.wrap(Messages.format(owner ? "<!i><green>Add owner" : "<!i><green>Add member")))
-            .addLoreLines(MenuItems.wrap(Messages.format("<!i><dark_gray>Click, then type a player name")));
-        return MenuItems.clickable(() -> provider, (item, click) -> promptAdd(click.getPlayer(), owner));
+        return Item.builder()
+            .setItemProvider(new ItemBuilder(owner ? Material.GOLDEN_HELMET : Material.LEATHER_HELMET)
+                .setName(Messages.format(owner ? "<!i><green>Add owner" : "<!i><green>Add member"))
+                .addLoreLines(Messages.format("<!i><dark_gray>Click, then type a player name")))
+            .addClickHandler((item, click) -> promptAdd(click.player(), owner))
+            .build();
     }
 
     private static RegionMembershipChangeEvent.Role role(final boolean owner) {

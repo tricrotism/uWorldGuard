@@ -8,10 +8,10 @@ import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.jspecify.annotations.NullMarked;
+import xyz.xenondevs.invui.gui.Markers;
 import xyz.xenondevs.invui.gui.PagedGui;
-import xyz.xenondevs.invui.gui.structure.Markers;
 import xyz.xenondevs.invui.item.Item;
-import xyz.xenondevs.invui.item.builder.ItemBuilder;
+import xyz.xenondevs.invui.item.ItemBuilder;
 import xyz.xenondevs.invui.window.Window;
 
 import java.util.ArrayList;
@@ -36,7 +36,7 @@ public final class SettingsMenu {
     }
 
     public void open(final Player player) {
-        final PagedGui<Item> gui = PagedGui.items()
+        final PagedGui<Item> gui = PagedGui.itemsBuilder()
             .setStructure(
                 "x x x x x x x x x",
                 "x x x x x x x x x",
@@ -52,10 +52,10 @@ public final class SettingsMenu {
             .setContent(messageItems())
             .build();
 
-        Window.single()
+        Window.builder()
             .setViewer(player)
-            .setTitle(MenuItems.wrap(Messages.format("<dark_gray>Messages")))
-            .setGui(gui)
+            .setTitle(Messages.format("<dark_gray>Messages"))
+            .setUpperGui(gui)
             .build()
             .open();
     }
@@ -68,19 +68,20 @@ public final class SettingsMenu {
         final List<Item> items = new ArrayList<>();
         for (final String key : messages.keys()) {
             final Component name = Messages.format("<!i><yellow><key>", Placeholder.unparsed("key", key));
-            items.add(MenuItems.clickable(
-                () -> {
+            items.add(Item.builder()
+                .setItemProvider(viewer -> {
                     final String value = messages.raw(key);
                     return new ItemBuilder(Material.PAPER)
-                        .setDisplayName(MenuItems.wrap(name))
+                        .setName(name)
                         .addLoreLines(
-                            MenuItems.wrap(Messages.format("<!i><gray>Value: <white><value>",
+                            Messages.format("<!i><gray>Value: <white><value>",
                                 Placeholder.unparsed("value",
                                     value == null || value.isBlank() || "false".equalsIgnoreCase(value)
-                                        ? "<disabled>" : value))),
-                            MenuItems.wrap(Messages.format("<!i><dark_gray>Click to edit (chat)")));
-                },
-                (item, click) -> promptMessage(click.getPlayer(), key)));
+                                        ? "<disabled>" : value)),
+                            Messages.format("<!i><dark_gray>Click to edit (chat)"));
+                })
+                .addClickHandler((item, click) -> promptMessage(click.player(), key))
+                .build());
         }
         return items;
     }
@@ -99,14 +100,15 @@ public final class SettingsMenu {
     }
 
     private Item cooldownItem() {
-        return MenuItems.clickable(
-            () -> new ItemBuilder(Material.CLOCK)
-                .setDisplayName(MenuItems.wrap(Messages.format("<!i><yellow>Message cooldown")))
+        return Item.builder()
+            .setItemProvider(viewer -> new ItemBuilder(Material.CLOCK)
+                .setName(Messages.format("<!i><yellow>Message cooldown"))
                 .addLoreLines(
-                    MenuItems.wrap(Messages.format("<!i><gray>Seconds: <white><seconds>",
-                        Placeholder.unparsed("seconds", Long.toString(messages.cooldownSeconds())))),
-                    MenuItems.wrap(Messages.format("<!i><dark_gray>Click to edit (chat)"))),
-            (item, click) -> promptCooldown(click.getPlayer()));
+                    Messages.format("<!i><gray>Seconds: <white><seconds>",
+                        Placeholder.unparsed("seconds", Long.toString(messages.cooldownSeconds()))),
+                    Messages.format("<!i><dark_gray>Click to edit (chat)")))
+            .addClickHandler((item, click) -> promptCooldown(click.player()))
+            .build();
     }
 
     private void promptCooldown(final Player player) {

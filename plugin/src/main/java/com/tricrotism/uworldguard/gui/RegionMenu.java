@@ -15,11 +15,10 @@ import org.bukkit.event.inventory.ClickType;
 import org.bukkit.plugin.Plugin;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import xyz.xenondevs.invui.gui.Markers;
 import xyz.xenondevs.invui.gui.PagedGui;
-import xyz.xenondevs.invui.gui.structure.Markers;
 import xyz.xenondevs.invui.item.Item;
-import xyz.xenondevs.invui.item.ItemProvider;
-import xyz.xenondevs.invui.item.builder.ItemBuilder;
+import xyz.xenondevs.invui.item.ItemBuilder;
 import xyz.xenondevs.invui.window.Window;
 
 import java.util.ArrayList;
@@ -51,7 +50,7 @@ public final class RegionMenu {
     }
 
     public void open(final Player player) {
-        final PagedGui<Item> built = PagedGui.items()
+        final PagedGui<Item> built = PagedGui.itemsBuilder()
             .setStructure(
                 "x x x x x x x x x",
                 "x x x x x x x x x",
@@ -68,11 +67,11 @@ public final class RegionMenu {
             .build();
         this.gui = built;
 
-        Window.single()
+        Window.builder()
             .setViewer(player)
-            .setTitle(MenuItems.wrap(Messages.format("<dark_gray>Regions: <aqua><world>",
-                Placeholder.unparsed("world", world.getName()))))
-            .setGui(built)
+            .setTitle(Messages.format("<dark_gray>Regions: <aqua><world>",
+                Placeholder.unparsed("world", world.getName())))
+            .setUpperGui(built)
             .build()
             .open();
     }
@@ -90,30 +89,31 @@ public final class RegionMenu {
                 Placeholder.unparsed("id", region.getId()));
             final Component type = Messages.format("<!i><gray>Type: <white><type>",
                 Placeholder.unparsed("type", region.getType().name().toLowerCase(Locale.ROOT)));
-            items.add(MenuItems.clickable(
-                () -> regionProvider(region, name, type),
-                (item, click) -> onClick(region, click.getPlayer(), click.getClickType())));
+            items.add(Item.builder()
+                .setItemProvider(viewer -> regionProvider(region, name, type))
+                .addClickHandler((item, click) -> onClick(region, click.player(), click.clickType()))
+                .build());
         }
         return items;
     }
 
-    private ItemProvider regionProvider(
+    private ItemBuilder regionProvider(
         final ProtectedRegion region, final Component name, final Component type
     ) {
         return new ItemBuilder(materialFor(region.getType()))
-            .setDisplayName(MenuItems.wrap(name))
+            .setName(name)
             .addLoreLines(
-                MenuItems.wrap(type),
-                MenuItems.wrap(Messages.format("<!i><gray>Priority: <white><priority>",
-                    Placeholder.unparsed("priority", Integer.toString(region.getPriority())))),
-                MenuItems.wrap(Messages.format("<!i><gray>Owners: <white><owners> <gray>Members: <white><members>",
+                type,
+                Messages.format("<!i><gray>Priority: <white><priority>",
+                    Placeholder.unparsed("priority", Integer.toString(region.getPriority()))),
+                Messages.format("<!i><gray>Owners: <white><owners> <gray>Members: <white><members>",
                     Placeholder.unparsed("owners", Integer.toString(region.getOwners().size())),
-                    Placeholder.unparsed("members", Integer.toString(region.getMembers().size())))),
-                MenuItems.wrap(Component.empty()),
-                MenuItems.wrap(Messages.format("<!i><dark_gray>Left-click <gray>edit flags")),
-                MenuItems.wrap(Messages.format("<!i><dark_gray>Right-click <gray>teleport here")),
-                MenuItems.wrap(Messages.format("<!i><dark_gray>Shift + left <gray>owners & members")),
-                MenuItems.wrap(Messages.format("<!i><dark_gray>Shift + right <red>delete this region")));
+                    Placeholder.unparsed("members", Integer.toString(region.getMembers().size()))),
+                Component.empty(),
+                Messages.format("<!i><dark_gray>Left-click <gray>edit flags"),
+                Messages.format("<!i><dark_gray>Right-click <gray>teleport here"),
+                Messages.format("<!i><dark_gray>Shift + left <gray>owners & members"),
+                Messages.format("<!i><dark_gray>Shift + right <red>delete this region"));
     }
 
     private static Material materialFor(final RegionType type) {
@@ -167,12 +167,14 @@ public final class RegionMenu {
     }
 
     private Item createItem() {
-        final ItemProvider provider = new ItemBuilder(Material.EMERALD)
-            .setDisplayName(MenuItems.wrap(Messages.format("<!i><green>Create region")))
-            .addLoreLines(
-                MenuItems.wrap(Messages.format("<!i><gray>Cuboid from your current selection")),
-                MenuItems.wrap(Messages.format("<!i><dark_gray>Click, then type a name")));
-        return MenuItems.clickable(() -> provider, (item, click) -> promptCreate(click.getPlayer()));
+        return Item.builder()
+            .setItemProvider(new ItemBuilder(Material.EMERALD)
+                .setName(Messages.format("<!i><green>Create region"))
+                .addLoreLines(
+                    Messages.format("<!i><gray>Cuboid from your current selection"),
+                    Messages.format("<!i><dark_gray>Click, then type a name")))
+            .addClickHandler((item, click) -> promptCreate(click.player()))
+            .build();
     }
 
     private void promptCreate(final Player player) {

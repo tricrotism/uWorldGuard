@@ -10,10 +10,10 @@ people who do.
 
 |               |                          |
 |---------------|--------------------------|
-| **Minecraft** | 1.21.11                  |
+| **Minecraft** | 1.21.11+                 |
 | **Server**    | Paper (Folia-compatible) |
 | **Java**      | 25 or newer              |
-| **Version**   | 1.0.5                    |
+| **Version**   | 1.1.2                    |
 
 ---
 
@@ -21,7 +21,7 @@ people who do.
 
 ### Installing
 
-1. Drop `uWorldGuard-1.0.5.jar` into your `plugins/` folder.
+1. Drop `uWorldGuard-1.1.2.jar` into your `plugins/` folder.
 2. Restart the server. **Not** `/reload` — this plugin loads at startup.
 3. On first start it downloads a few libraries it needs. That's normal and only happens once.
 
@@ -544,7 +544,7 @@ The API module is published to your local Maven repo:
 repositories { mavenLocal() }
 
 dependencies {
-    compileOnly("com.tricrotism:uworldguard-api:1.0.5")
+    compileOnly("com.tricrotism:uworldguard-api:1.1.2")
 }
 ```
 

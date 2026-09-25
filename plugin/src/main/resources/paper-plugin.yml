@@ -21,7 +21,7 @@ dependencies:
     server:
         PacketEvents:
             load: BEFORE
-            required: false
+            required: true
             join-classpath: true
         WorldEdit:
             load: BEFORE

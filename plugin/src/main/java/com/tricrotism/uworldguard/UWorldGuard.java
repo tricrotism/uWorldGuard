@@ -284,15 +284,11 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
     /**
      * Arms the packet layer behind {@code disable-collision}.
      *
-     * <p>PacketEvents is optional, so this is the one place that decides. Nothing else in the plugin
-     * names a PacketEvents class — {@code PacketHooks} is the seam, and {@code PacketSink} (which
-     * does name them) is loaded only from here, after the plugin has been seen. Without it
+     * <p>PacketEvents is a required dependency, but an incompatible build can still fail to link, so
+     * {@code PacketSink} (the only class naming it outside InvUI) is loaded only from here. Without it
      * collision still works for every player on the main scoreboard, which is nearly all of them.
      */
     private void activatePackets() {
-        if (getServer().getPluginManager().getPlugin("PacketEvents") == null) {
-            return;
-        }
         try {
             PacketSink.install(this);
         } catch (final LinkageError | RuntimeException e) {

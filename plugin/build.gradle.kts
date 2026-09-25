@@ -10,7 +10,15 @@ repositories {
     maven("https://repo.codemc.io/repository/maven-releases/")
     maven("https://maven.enginehub.org/repo/")
     maven("https://repo.extendedclip.com/releases/")
-    maven("https://repo.xenondevs.xyz/releases/")
+    // InvUI PacketEvents fork. GitHub Packages refuses anonymous reads, so builds need
+    // gpr.username / gpr.password (a read:packages token) in ~/.gradle/gradle.properties.
+    maven("https://maven.pkg.github.com/AhmadNasser04/InvUI-PacketEvents") {
+        credentials {
+            username = providers.gradleProperty("gpr.username").get()
+            password = providers.gradleProperty("gpr.password").get()
+        }
+        content { includeGroup("xyz.xenondevs.invui") }
+    }
 }
 
 dependencies {
@@ -28,14 +36,14 @@ dependencies {
     compileOnly(libs.cloud.annotations)
     annotationProcessor(libs.cloud.annotations)
 
-    // PacketEvents — provided by the server plugin at runtime.
+    // PacketEvents — provided by the server plugin at runtime. Required: InvUI's menus run on it.
     compileOnly(libs.packetevents.spigot)
 
     // PlaceholderAPI — optional at runtime; placeholder expansion is skipped when absent.
     compileOnly(libs.placeholderapi)
 
-    // InvUI — GUI library, downloaded at boot by the PluginLoader (self-contained, packet-based).
-    compileOnly(libs.invui)
+    // InvUI (PacketEvents fork) - shaded and relocated, since its repository needs a token to read.
+    implementation(libs.invui)
 
     // WorldEdit — optional at runtime; selection falls back to the built-in wand when absent.
     // Transitives are excluded: only the API classes are needed to compile, and fastutil/gson
@@ -92,9 +100,10 @@ tasks {
         }
         configurations = project.configurations.runtimeClasspath.map { setOf(it) }
         dependencies {
-            exclude { it.moduleGroup != "org.bstats" }
+            exclude { it.moduleGroup != "org.bstats" && it.moduleGroup != "xyz.xenondevs.invui" }
         }
         relocate("org.bstats", "com.tricrotism.uworldguard.metrics")
+        relocate("xyz.xenondevs.invui", "com.tricrotism.uworldguard.lib.invui")
     }
 
     assemble {
