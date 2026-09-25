@@ -195,12 +195,12 @@ Groups: `all` · `members` · `owners` · `nonmembers` · `nonowners` · `none`.
 WorldGuard's spellings work too, so `non-members` and `non_members` are both accepted.
 
 <details>
-<summary><b>Protection</b> — who can touch what (40 flags)</summary>
+<summary><b>Protection</b> — who can touch what (41 flags)</summary>
 
 `build` · `block-break` · `block-place` · `interact` · `use` · `chest-access` · `pvp` ·
 `damage-animals` · `fall-damage` · `ride` · `sleep` · `tnt` · `lighter` · `end-crystal-place` ·
 `end-crystal-interact` · `worldedit` · `pistons` · `passthrough` · `entity-item-frame-destroy` ·
-`entity-painting-destroy` · `vehicle-place` · `vehicle-destroy` · `potion-splash` ·
+`entity-painting-destroy` · `entity-armor-stand-destroy` · `vehicle-place` · `vehicle-destroy` · `potion-splash` ·
 `firework-damage` · `use-anvil` · `respawn-anchors` · `use-dripleaf` · `sign-edit` · `tnt-prime` ·
 `armor-stand-manipulate` · `mannequin-manipulate` · `vault-use` · `bucket-entity` ·
 `bucket-fill` · `bucket-empty` · `shear` · `leash` · `name-entity` · `flower-pot` · `lectern`

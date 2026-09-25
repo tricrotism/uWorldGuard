@@ -80,10 +80,9 @@ public final class Flags {
      * for regions that exist only to carry a greeting or an effect over an area players build in.
      */
     public static final StateFlag PASSTHROUGH = register(FlagCategory.PROTECTION, new StateFlag("passthrough", false));
-    public static final StateFlag ENTITY_ITEM_FRAME_DESTROY =
-        register(FlagCategory.PROTECTION, new StateFlag("entity-item-frame-destroy", true));
-    public static final StateFlag ENTITY_PAINTING_DESTROY =
-        register(FlagCategory.PROTECTION, new StateFlag("entity-painting-destroy", true));
+    public static final StateFlag ENTITY_ITEM_FRAME_DESTROY = register(FlagCategory.PROTECTION, new StateFlag("entity-item-frame-destroy", true));
+    public static final StateFlag ENTITY_PAINTING_DESTROY = register(FlagCategory.PROTECTION, new StateFlag("entity-painting-destroy", true));
+    public static final StateFlag ENTITY_ARMOR_STAND_DESTROY = register(FlagCategory.PROTECTION, new StateFlag("entity-armor-stand-destroy", true));
     public static final StateFlag ITEM_FRAME_ROTATION = register(FlagCategory.PROTECTION, new StateFlag("item-frame-rotation", true));
     public static final StateFlag VEHICLE_PLACE = register(FlagCategory.PROTECTION, new StateFlag("vehicle-place", true));
     public static final StateFlag VEHICLE_DESTROY = register(FlagCategory.PROTECTION, new StateFlag("vehicle-destroy", true));

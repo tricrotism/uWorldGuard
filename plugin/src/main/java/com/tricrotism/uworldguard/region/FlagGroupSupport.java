@@ -96,6 +96,7 @@ public final class FlagGroupSupport {
         Flags.DAMAGE_ANIMALS,
         Flags.ENTITY_ITEM_FRAME_DESTROY,
         Flags.ENTITY_PAINTING_DESTROY,
+        Flags.ENTITY_ARMOR_STAND_DESTROY,
         // InteractionListener.onItemFrame
         Flags.ITEM_FRAME_ROTATION,
         // MachineListener.onVault

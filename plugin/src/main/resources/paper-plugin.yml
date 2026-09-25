@@ -1,5 +1,5 @@
 name: uWorldGuard
-description: $description
+description: 'World Guard... but out of this world (Real Version ${version})'
 version: '${version}'
 
 main: com.tricrotism.uworldguard.UWorldGuard
@@ -19,7 +19,7 @@ has-open-classloader: true
 
 dependencies:
     server:
-        PacketEvents:
+        packetevents:
             load: BEFORE
             required: true
             join-classpath: true

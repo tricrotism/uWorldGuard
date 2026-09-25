@@ -27,7 +27,7 @@ import java.util.List;
 /**
  * Enforces mob-spawning and deny-spawn, the explosion flags, mob grief (enderman, ravager, wither,
  * ender dragon), mob-damage, damage-animals, firework-damage, lightning, potion-splash,
- * item-frame/painting destruction, and mob-drops / exp-drops.
+ * item-frame/painting/armor-stand destruction, and mob-drops / exp-drops.
  */
 @NullMarked
 public final class EntityListener implements Listener {
@@ -194,12 +194,15 @@ public final class EntityListener implements Listener {
             return;
         }
 
-        if (victim instanceof ItemFrame) {
+        if (victim instanceof ItemFrame || victim instanceof ArmorStand) {
+            final StateFlag flag = victim instanceof ItemFrame
+                ? Flags.ENTITY_ITEM_FRAME_DESTROY
+                : Flags.ENTITY_ARMOR_STAND_DESTROY;
             final Player attacker = resolveAttacker(damager);
             final ApplicableRegionSet at = query.getApplicableRegions(victim);
             final boolean allowed = attacker != null
-                ? at.testBuild(attacker.getUniqueId(), Flags.ENTITY_ITEM_FRAME_DESTROY)
-                : at.testState(Flags.ENTITY_ITEM_FRAME_DESTROY, null);
+                ? at.testBuild(attacker.getUniqueId(), flag)
+                : at.testState(flag, null);
             if (!allowed && (attacker == null || !Bypass.has(attacker))) {
                 event.setCancelled(true);
             }
