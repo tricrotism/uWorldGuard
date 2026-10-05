@@ -39,21 +39,62 @@ import java.util.UUID;
         Material.CARTOGRAPHY_TABLE, Material.STONECUTTER, Material.ENCHANTING_TABLE);
 
     /**
-     * Items whose use never touches the clicked block. A denied click still lets these through,
-     * otherwise a bottle or wind charge aimed at the floor of a protected region never leaves the hand.
-     * Kept to a fixed list: anything not named here can act on the block and stays denied with it.
+     * Blocks that do something when right-clicked. Paper deprecates {@code isInteractable} as not
+     * comprehensive. It errs toward including blocks like stairs, which only costs a denied block use,
+     * and what items do to blocks is covered by {@link #CHANGES_BLOCK}.
      */
-    private static final Set<Material> THROWN = EnumSet.of(
-        Material.EXPERIENCE_BOTTLE, Material.WIND_CHARGE, Material.ENDER_PEARL, Material.SNOWBALL,
-        Material.EGG, Material.BLUE_EGG, Material.BROWN_EGG, Material.SPLASH_POTION,
-        Material.LINGERING_POTION, Material.TRIDENT, Material.BOW, Material.CROSSBOW,
-        Material.FISHING_ROD);
+    private static final Set<Material> REACTS_TO_CLICK = reactsToClick();
+
+    /**
+     * Items whose right-click changes the clicked block itself: tilling, stripping, paths, waxing,
+     * carving, bone meal, lighting, brushing, filling an end portal frame, mud from water, and setting
+     * a spawner's mob.
+     */
+    private static final Set<Material> CHANGES_BLOCK = changesBlock();
 
     private InteractFlags() {
     }
 
-    static boolean leavesBlockAlone(final Material item) {
-        return THROWN.contains(item) || item.isEdible();
+    /**
+     * Whether right-clicking {@code block} with {@code item} uses the block at all. Clicking stone to
+     * place a block or to throw a wind charge does not, so as in WorldGuard no flag is consulted.
+     */
+    static boolean usesBlock(final Material block, final Material item) {
+        return REACTS_TO_CLICK.contains(block) || CHANGES_BLOCK.contains(item);
+    }
+
+    /**
+     * Whether a denied click must stop the item as well as the block. Only an item that would change
+     * the block, a hoe on dirt for example. Anything else is still used, so a bottle thrown at a
+     * protected door leaves the hand and a block can be placed against it.
+     */
+    static boolean changesBlock(final Material item) {
+        return CHANGES_BLOCK.contains(item);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Set<Material> reactsToClick() {
+        final Set<Material> blocks = EnumSet.noneOf(Material.class);
+        for (final Material material : Material.values()) {
+            if (!material.isLegacy() && material.isBlock() && material.isInteractable()) {
+                blocks.add(material);
+            }
+        }
+        return blocks;
+    }
+
+    private static Set<Material> changesBlock() {
+        final Set<Material> items = EnumSet.of(Material.BONE_MEAL, Material.FLINT_AND_STEEL,
+            Material.FIRE_CHARGE, Material.SHEARS, Material.HONEYCOMB, Material.BRUSH, Material.ENDER_EYE,
+            Material.POTION);
+        for (final Material material : Material.values()) {
+            final String name = material.name();
+            if (!material.isLegacy() && (name.endsWith("_HOE") || name.endsWith("_AXE")
+                || name.endsWith("_SHOVEL") || name.endsWith("_SPAWN_EGG"))) {
+                items.add(material);
+            }
+        }
+        return items;
     }
 
     /**

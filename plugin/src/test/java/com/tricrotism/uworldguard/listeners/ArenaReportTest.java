@@ -227,6 +227,38 @@ class ArenaReportTest {
     }
 
     @Test
+    void placingABlockOnTheFloorOfABlockPlaceRegionIsNotAnInteraction() {
+        global().setFlag(Flags.BUILD, State.DENY);
+        region("crystalpvp", 0, 32).setFlag(Flags.BLOCK_PLACE, State.ALLOW);
+
+        final PlayerInteractEvent event = rightClick(server.addPlayer(), Material.STONE, Material.OBSIDIAN);
+
+        assertFalse(event.isCancelled(), "clicking stone uses nothing, so only block-place decides");
+        assertNotEquals(Event.Result.DENY, event.useItemInHand());
+    }
+
+    @Test
+    void aWindChargeStillThrowsWhereInteractIsDenied() {
+        region("swordpvp", 0, 32).setFlag(Flags.INTERACT, State.DENY);
+
+        final PlayerInteractEvent event = rightClick(server.addPlayer(), Material.STONE, Material.WIND_CHARGE);
+
+        assertNotEquals(Event.Result.DENY, event.useItemInHand());
+    }
+
+    @Test
+    void aDeniedDoorKeepsTheBlockInHandUsable() {
+        final ProtectedCuboidRegion arena = region("crystalpvp", 0, 32);
+        arena.setFlag(Flags.BLOCK_PLACE, State.ALLOW);
+        arena.setFlag(Flags.USE, State.DENY);
+
+        final PlayerInteractEvent event = rightClick(server.addPlayer(), Material.OAK_DOOR, Material.OBSIDIAN);
+
+        assertEquals(Event.Result.DENY, event.useInteractedBlock(), "the door stays shut");
+        assertNotEquals(Event.Result.DENY, event.useItemInHand(), "the block can still be placed against it");
+    }
+
+    @Test
     void aHoeOnTheFloorIsStillRefused() {
         arena();
 

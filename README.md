@@ -789,6 +789,13 @@ or anything else that disables a plugin before loading its replacement. The relo
 every region gets its values back. Plugins using the WorldGuard API get the same treatment, and their session handlers
 are unregistered along with their flags, so a reload never leaves two copies of a handler running.
 
+uWorldGuard itself can be swapped with Cork too (`/cork reload uWorldGuard`). A plugin built against uWorldGuard or the
+WorldGuard API stays linked to the copy it loaded with, so uWorldGuard disables those plugins first, and the new copy
+reloads them through Cork once it is up. That covers plugins that depend or soft-depend on WorldGuard or uWorldGuard,
+plugins that registered flags or session handlers, and anything depending on those. Without Cork they stay disabled and
+the log names them. The first swap from a release older than this one only reloads the plugins that declare a
+dependency, so restart for that upgrade if a plugin uses the API without declaring it.
+
 Flag types available: `StateFlag` (allow/deny + group), `BooleanFlag`, `IntegerFlag`, `DoubleFlag`,
 `StringFlag`, `StringSetFlag`, `MaterialSetFlag`, `PotionEffectSetFlag`. Subclass `Flag<T>` for
 anything else — you implement `parse`, `marshal` and `unmarshal`.

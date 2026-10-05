@@ -545,11 +545,18 @@ public final class RegionCommands {
     @Permission("uworldguard.region.list")
     public void list(
         final Source sender,
-        @Argument("page") final @Nullable Integer pageArg,
+        // A string that yields to flags: an optional integer tried to parse "-w" and failed.
+        @Argument("page") @FlagYielding final @Nullable String pageArg,
         @org.incendo.cloud.annotations.Flag(value = "world", aliases = "w",
             suggestions = "worlds") final @Nullable String worldName
     ) {
-        final int page = pageArg == null ? 1 : pageArg;
+        final int page;
+        try {
+            page = pageArg == null || pageArg.isBlank() ? 1 : Integer.parseInt(pageArg.trim());
+        } catch (final NumberFormatException e) {
+            error(sender, "The page has to be a whole number.");
+            return;
+        }
         final World world = worldFor(sender, worldName);
         if (world == null) return;
         final RegionManager regionManager = managerIn(sender, world);
@@ -1362,12 +1369,7 @@ public final class RegionCommands {
     }
 
     /**
-     * Value suggestions for {@code /uwg flag}. Where a flag has no closed set of values, the
-     * suggestion is a shaped example rather than nothing, so the expected format is discoverable from
-     * the command line instead of only from the menu's "Accepts:" line.
-     */
-    /**
-     * The region's current value first, so editing a list means appending rather than retyping it,
+     * Value suggestions for {@code /uwg flag}: the region's current value first, so editing a list means appending rather than retyping it,
      * then, for list flags, completions for the entry being typed after the last comma, then examples.
      */
     @Suggestions("flag-values")
@@ -1435,6 +1437,11 @@ public final class RegionCommands {
         }
     }
 
+    /**
+     * Where a flag has no closed set of values, the suggestion is a shaped example rather than
+     * nothing, so the expected format is discoverable from the command line instead of only from the
+     * menu's "Accepts:" line.
+     */
     private static List<String> exampleValues(final Flag<?> flag) {
         final List<String> declared = flag.getValueSuggestions();
         if (!declared.isEmpty()) return declared;

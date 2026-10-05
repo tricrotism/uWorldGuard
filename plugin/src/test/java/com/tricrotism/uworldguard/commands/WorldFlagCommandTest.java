@@ -22,8 +22,7 @@ import org.mockbukkit.mockbukkit.ServerMock;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
 import org.mockbukkit.mockbukkit.world.WorldMock;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * The {@code -w <world>} flag, parsed by Cloud exactly as the server would: what the console can
@@ -141,6 +140,30 @@ class WorldFlagCommandTest {
         run(player, "rg priority spawn 7 -w arena");
 
         assertEquals(7, spawn.getPriority());
+    }
+
+    @Test
+    void listTakesTheWorldFlagWithoutAPage() {
+        final PlayerMock player = server.addPlayer();
+
+        run(player, "rg list -w arena");
+
+        final net.kyori.adventure.text.Component listing = player.nextComponentMessage();
+        assertNotNull(listing);
+        assertTrue(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+            .serialize(listing).contains("in arena"));
+    }
+
+    @Test
+    void listStillTakesAPageBeforeTheWorldFlag() {
+        final PlayerMock player = server.addPlayer();
+
+        run(player, "rg list 1 -w arena");
+
+        final net.kyori.adventure.text.Component listing = player.nextComponentMessage();
+        assertNotNull(listing);
+        assertTrue(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+            .serialize(listing).contains("page 1/1"));
     }
 
     @Test

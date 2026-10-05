@@ -147,6 +147,19 @@ public final class SessionBridge extends com.sk89q.worldguard.bukkit.session.Buk
         return removed;
     }
 
+    /**
+     * Whether a handler factory whose class came from {@code loader} is registered.
+     */
+    public boolean hasHandlersOwnedBy(final ClassLoader loader) {
+        for (final com.sk89q.worldguard.session.handler.Handler.Factory<
+            ? extends com.sk89q.worldguard.session.handler.Handler> factory : factories) {
+            if (factory.getClass().getClassLoader() == loader) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public boolean customHandlersRegistered() {
         return !factories.isEmpty();

@@ -6,6 +6,7 @@ import com.tricrotism.uworldguard.config.*;
 import com.tricrotism.uworldguard.gui.ChatInputListener;
 import com.tricrotism.uworldguard.gui.ChatInputService;
 import com.tricrotism.uworldguard.integration.BStats;
+import com.tricrotism.uworldguard.integration.HotSwap;
 import com.tricrotism.uworldguard.integration.ReportedVersion;
 import com.tricrotism.uworldguard.listeners.*;
 import com.tricrotism.uworldguard.migration.MigrationCommands;
@@ -143,6 +144,7 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         }
         EventGate.load(getConfig(), getLogger());
         InteractionWhitelist.load(getConfig(), getLogger());
+        final boolean swapped = HotSwap.reclaimProvidedNames(this, getLogger());
         final boolean worldGuardCompat = prepareWorldGuardCompat();
 
         final RegionStore store = createStore(settings);
@@ -241,6 +243,7 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
 
         // bStats | https://bstats.org/plugin/bukkit/uWorldGuard/32190
         this.metrics = BStats.start(this, 32190);
+        HotSwap.reloadDependents(this, swapped, getLogger());
     }
 
     /**
@@ -264,7 +267,7 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
      */
     private boolean prepareWorldGuardCompat() {
         final Plugin claimant = getServer().getPluginManager().getPlugin("WorldGuard");
-        if (claimant != null && claimant != this) {
+        if (claimant != null && claimant != this && !HotSwap.isStaleCopy(claimant, this)) {
             WgCompatBridge.markInactive("another plugin provides WorldGuard ("
                 + claimant.getName() + " " + claimant.getPluginMeta().getVersion() + ")");
             getLogger().severe("WorldGuard is installed alongside uWorldGuard. The WorldGuard API"
@@ -389,6 +392,13 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
      */
     @Override
     public void onDisable() {
+        if (container != null) {
+            try {
+                HotSwap.disableDependents(this, getLogger());
+            } catch (final RuntimeException | LinkageError e) {
+                getLogger().log(Level.SEVERE, "Error while disabling the plugins that use uWorldGuard.", e);
+            }
+        }
         try {
             releaseRuntime();
         } catch (final RuntimeException | LinkageError e) {

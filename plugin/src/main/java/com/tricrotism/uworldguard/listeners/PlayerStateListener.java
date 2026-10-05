@@ -19,12 +19,15 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityPotionEffectEvent;
 import org.bukkit.event.entity.EntityRegainHealthEvent;
 import org.bukkit.event.entity.EntityRegainHealthEvent.RegainReason;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.event.vehicle.VehicleEnterEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.jspecify.annotations.NullMarked;
 
 import java.util.EnumSet;
@@ -33,7 +36,8 @@ import java.util.UUID;
 
 /**
  * Enforces sleep, enderpearl/chorus teleport, chest-access, respawn-anchors, ride,
- * invincible/godmode, fall-damage, natural-health-regen, natural-hunger-drain, and item-durability.
+ * invincible/godmode, fall-damage, natural-health-regen, natural-hunger-drain, blocked-effects, and
+ * item-durability.
  */
 @NullMarked
 public final class PlayerStateListener implements Listener {
@@ -294,6 +298,33 @@ public final class PlayerStateListener implements Listener {
         }
         if (fall && !set.testState(Flags.FALL_DAMAGE, player.getUniqueId())) {
             event.setCancelled(true);
+        }
+    }
+
+    /**
+     * Refuses a blocked effect as it is applied. The tick service strips blocked effects once a
+     * second, which is too slow for a wither rose: it re-applies Wither every tick the player stands
+     * in it, so damage lands between strips. The tick still clears effects a player walks in with.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onEffect(final EntityPotionEffectEvent event) {
+        if (!(event.getEntity() instanceof Player player) || event.getNewEffect() == null
+            || EventGate.disabled(event)) {
+            return;
+        }
+        if (!query.usesFlag(player.getWorld(), Flags.BLOCKED_EFFECTS)) {
+            return;
+        }
+        final Set<PotionEffect> blocked = query.queryValue(player, Flags.BLOCKED_EFFECTS);
+        if (blocked == null) {
+            return;
+        }
+        final PotionEffectType type = event.getModifiedType();
+        for (final PotionEffect effect : blocked) {
+            if (effect.getType() == type) {
+                event.setCancelled(true);
+                return;
+            }
         }
     }
 

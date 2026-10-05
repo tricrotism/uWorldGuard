@@ -287,6 +287,12 @@ public final class BuildProtectionListener implements Listener {
         messages.sendDeny(player, Flags.BLOCK_PLACE, set.queryValue(Flags.DENY_MESSAGE));
     }
 
+    /**
+     * {@code interact}/{@code use} for right-clicking a block, the way WorldGuard judges it. A click
+     * that uses nothing, such as placing a block on the floor or throwing a wind charge at it, is not
+     * an interaction, so {@code block-place} alone decides placement. A refused click denies the
+     * block's own use and leaves the held item usable, unless that item would change the block.
+     */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onInteract(final PlayerInteractEvent event) {
         if (EventGate.disabled(event)) {
@@ -296,7 +302,9 @@ public final class BuildProtectionListener implements Listener {
         if (event.getAction() != Action.RIGHT_CLICK_BLOCK || block == null || event.getHand() != EquipmentSlot.HAND) {
             return;
         }
-        if (InteractionWhitelist.allows(block.getWorld(), block.getType())) {
+        final Material item = event.getMaterial();
+        if (!InteractFlags.usesBlock(block.getType(), item)
+            || InteractionWhitelist.allows(block.getWorld(), block.getType())) {
             return;
         }
         final Player player = event.getPlayer();
@@ -308,11 +316,11 @@ public final class BuildProtectionListener implements Listener {
             if (InteractFlags.explicitlyAllowed(set, player.getUniqueId(), block)) {
                 return;
             }
-            if (InteractFlags.leavesBlockAlone(event.getMaterial())) {
+            if (InteractFlags.changesBlock(item)) {
+                event.setCancelled(true);
+            } else {
                 event.setUseInteractedBlock(Event.Result.DENY);
-                return;
             }
-            event.setCancelled(true);
             messages.sendDeny(player, Flags.INTERACT, set.queryValue(Flags.DENY_MESSAGE));
         }
     }
