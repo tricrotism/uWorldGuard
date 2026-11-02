@@ -343,7 +343,7 @@ public final class PlayerStateListener implements Listener {
             return;
         }
         final Set<PotionEffect> blocked = query.queryValue(player, Flags.BLOCKED_EFFECTS);
-        if (blocked == null) {
+        if (blocked == null || Bypass.has(player)) {
             return;
         }
         final PotionEffectType type = event.getModifiedType();

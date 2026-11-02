@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.service;
 
+import com.tricrotism.uworldguard.config.Bypass;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.region.ApplicableRegionSet;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
@@ -370,7 +371,7 @@ public final class PlayerTickService implements Listener {
         }
 
         final Set<PotionEffect> blocked = regions.queryValue(Flags.BLOCKED_EFFECTS);
-        if (blocked != null) {
+        if (blocked != null && !Bypass.has(player)) {
             for (final PotionEffect effect : blocked) {
                 if (player.hasPotionEffect(effect.getType())) {
                     player.removePotionEffect(effect.getType());

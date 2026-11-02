@@ -23,7 +23,7 @@ public class RegionLookupBenchmark {
 
     private static final int POINTS = 1024;
 
-    @Param({"wilderness", "cuboid", "polygon", "sphere", "polyhedron", "composite", "carved"})
+    @Param({"wilderness", "cuboid", "polygon", "sphere", "polyhedron", "composite", "carved", "crowded"})
     public String shape;
 
     private RegionManager manager;
@@ -45,6 +45,17 @@ public class RegionLookupBenchmark {
         }
         region = build(shape, random);
         manager.addRegion(region);
+        if ("crowded".equals(shape)) {
+            // three floors of sixteen rooms over one chunk, 49 candidates with the region itself
+            for (int floor = 0; floor < 3; floor++) {
+                for (int x = 0; x < 16; x += 4) {
+                    for (int z = 0; z < 16; z += 4) {
+                        manager.addRegion(cuboid("room" + floor + "_" + x + "_" + z,
+                            x, floor * 20, z, x + 3, floor * 20 + 19, z + 3));
+                    }
+                }
+            }
+        }
 
         final BlockVector3 lo = region.getMinimumPoint();
         final BlockVector3 hi = region.getMaximumPoint();
@@ -63,6 +74,7 @@ public class RegionLookupBenchmark {
             case "wilderness" -> new ProtectedCuboidRegion("far",
                 BlockVector3.at(-9000, 0, -9000), BlockVector3.at(-8990, 10, -8990));
             case "cuboid" -> cuboid("r", 0, 0, 0, 64, 64, 64);
+            case "crowded" -> cuboid("r", 0, 0, 0, 15, 63, 15);
             case "polygon" -> {
                 final List<BlockVector3> points = new ArrayList<>();
                 for (int i = 0; i < 8; i++) {

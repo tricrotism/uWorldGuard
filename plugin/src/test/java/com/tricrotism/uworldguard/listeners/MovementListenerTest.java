@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.listeners;
 
+import com.tricrotism.uworldguard.config.Bypass;
 import com.tricrotism.uworldguard.config.Settings;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.region.ProtectedCuboidRegion;
@@ -14,6 +15,8 @@ import com.tricrotism.uworldguard.text.MessageService;
 import com.tricrotism.uworldguard.util.BlockVector3;
 import io.papermc.paper.event.entity.EntityMoveEvent;
 import org.bukkit.Location;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Boat;
 import org.bukkit.entity.Pig;
@@ -30,6 +33,7 @@ import org.mockbukkit.mockbukkit.world.WorldMock;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -152,6 +156,85 @@ class MovementListenerTest {
         server.getScheduler().performTicks(2);
 
         assertTrue(restores.outstanding().isEmpty(), "nothing was overridden, so nothing is owed");
+    }
+
+    @Test
+    void aBypassingPlayerKeepsFlightInANoFlyRegion() {
+        spawn().setFlag(Flags.FLY, false);
+        player.setAllowFlight(true);
+        player.addAttachment(plugin, Bypass.NODE, true);
+        assertTrue(Bypass.toggle(player));
+        register();
+
+        try {
+            assertTrue(player.teleport(new Location(world, 10.5, 64, 10.5)));
+            server.getScheduler().performTicks(2);
+
+            assertTrue(player.getAllowFlight(), "fly is a region restriction, so bypass lifts it");
+        } finally {
+            Bypass.clear(player.getUniqueId());
+        }
+    }
+
+    @Test
+    void togglingBypassInsideANoFlyRegionAppliesWithoutMoving() {
+        spawn().setFlag(Flags.FLY, false);
+        player.setAllowFlight(true);
+        player.addAttachment(plugin, Bypass.NODE, true);
+        final MovementListener movement = listener(new Settings());
+        server.getPluginManager().registerEvents(movement, plugin);
+        assertTrue(player.teleport(new Location(world, 10.5, 64, 10.5)));
+        server.getScheduler().performTicks(2);
+        assertFalse(player.getAllowFlight(), "the region takes flight away on entry");
+
+        try {
+            assertTrue(Bypass.toggle(player));
+            movement.refresh(player);
+            server.getScheduler().performTicks(1);
+            assertTrue(player.getAllowFlight(), "arming bypass hands flight back in place");
+
+            assertFalse(Bypass.toggle(player));
+            movement.refresh(player);
+            server.getScheduler().performTicks(1);
+            assertFalse(player.getAllowFlight(), "disarming it takes flight away again in place");
+        } finally {
+            Bypass.clear(player.getUniqueId());
+        }
+    }
+
+    @Test
+    void aBypassingPlayerLeavingARegionRunsNoExitCommand() {
+        final AtomicInteger runs = new AtomicInteger();
+        server.getCommandMap().register("test", new Command("probe") {
+            @Override
+            public boolean execute(final CommandSender sender, final String label, final String[] args) {
+                runs.incrementAndGet();
+                return true;
+            }
+        });
+        final ProtectedCuboidRegion spawn = spawn();
+        spawn.setFlag(Flags.COMMAND_ON_EXIT, "probe");
+        spawn.setFlag(Flags.CONSOLE_COMMAND_ON_EXIT, "probe");
+        player.addAttachment(plugin, Bypass.NODE, true);
+        register();
+        assertTrue(player.teleport(new Location(world, 10.5, 64, 10.5)));
+        server.getScheduler().performTicks(2);
+
+        assertTrue(player.teleport(new Location(world, 100.5, 64, 100.5)));
+        server.getScheduler().performTicks(2);
+        assertEquals(2, runs.get(), "an ordinary player runs both exit commands");
+        assertTrue(player.teleport(new Location(world, 10.5, 64, 10.5)));
+        server.getScheduler().performTicks(2);
+
+        try {
+            assertTrue(Bypass.toggle(player));
+            assertTrue(player.teleport(new Location(world, 100.5, 64, 100.5)));
+            server.getScheduler().performTicks(2);
+
+            assertEquals(2, runs.get(), "bypass skips both exit commands");
+        } finally {
+            Bypass.clear(player.getUniqueId());
+        }
     }
 
     @Test

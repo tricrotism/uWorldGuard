@@ -957,7 +957,7 @@ public final class MovementListener implements Listener {
      * an arbitrary command out of the middle of the move event we are still handling.
      */
     private void runCommand(final Player player, final @Nullable String raw, final boolean console) {
-        if (raw == null || raw.isBlank()) {
+        if (raw == null || raw.isBlank() || Bypass.has(player)) {
             return;
         }
         final String command = messages.expand(player, raw.replace("%player%", player.getName()));
@@ -1030,7 +1030,7 @@ public final class MovementListener implements Listener {
      * {@code teleportAsync} is the only form that can cross one.
      */
     private void teleport(final Player player, final @Nullable String raw) {
-        if (raw == null || raw.isBlank()) {
+        if (raw == null || raw.isBlank() || Bypass.has(player)) {
             return;
         }
         final Location target = Locations.parse(messages.expand(player, raw));
@@ -1131,6 +1131,25 @@ public final class MovementListener implements Listener {
     }
 
     /**
+     * Re-applies the continuous state of the regions {@code player} stands in, without waiting for
+     * them to cross a block. Toggling bypass changes what applies while the region set stays the same.
+     */
+    public void refresh(final Player player) {
+        if (plugin.getServer().isOwnedByCurrentRegion(player)) {
+            refreshOwned(player);
+        } else {
+            player.getScheduler().run(plugin, _ -> refreshOwned(player), null);
+        }
+    }
+
+    private void refreshOwned(final Player player) {
+        if (!player.isOnline() || EventGate.disabled(player.getWorld(), "PlayerMoveEvent")) {
+            return;
+        }
+        applyState(player, query.getApplicableRegions(player));
+    }
+
+    /**
      * Applies the region's continuous player state (game-mode, walk/fly speed, flight) while inside,
      * restoring each to the value the player had before entering once the override no longer applies.
      *
@@ -1151,8 +1170,9 @@ public final class MovementListener implements Listener {
             return;
         }
         boolean owedChanged = false;
+        final boolean bypass = Bypass.has(player);
 
-        final GameMode mode = toSet.worldUses(Flags.GAME_MODE) && !Bypass.has(player)
+        final GameMode mode = toSet.worldUses(Flags.GAME_MODE) && !bypass
             ? parseGameMode(toSet.queryValue(Flags.GAME_MODE)) : null;
         if (mode != null) {
             if (appliedGameModes.get(uuid) != mode) {
@@ -1172,7 +1192,7 @@ public final class MovementListener implements Listener {
             }
         }
 
-        final Double walk = toSet.worldUses(Flags.WALK_SPEED) ? toSet.queryValue(Flags.WALK_SPEED) : null;
+        final Double walk = toSet.worldUses(Flags.WALK_SPEED) && !bypass ? toSet.queryValue(Flags.WALK_SPEED) : null;
         if (walk != null) {
             final float target = clampSpeed(walk.floatValue());
             if (player.getWalkSpeed() != target) {
@@ -1191,7 +1211,7 @@ public final class MovementListener implements Listener {
             }
         }
 
-        final Double fly = toSet.worldUses(Flags.FLY_SPEED) ? toSet.queryValue(Flags.FLY_SPEED) : null;
+        final Double fly = toSet.worldUses(Flags.FLY_SPEED) && !bypass ? toSet.queryValue(Flags.FLY_SPEED) : null;
         if (fly != null) {
             final float target = clampSpeed(fly.floatValue());
             if (player.getFlySpeed() != target) {
@@ -1210,7 +1230,7 @@ public final class MovementListener implements Listener {
             }
         }
 
-        final Boolean allowFly = toSet.worldUses(Flags.FLY) ? toSet.queryValue(Flags.FLY) : null;
+        final Boolean allowFly = toSet.worldUses(Flags.FLY) && !bypass ? toSet.queryValue(Flags.FLY) : null;
         if (allowFly != null) {
             if (player.getAllowFlight() != allowFly) {
                 owedChanged |= savedAllowFlight.putIfAbsent(uuid, player.getAllowFlight()) == null;
@@ -1234,7 +1254,7 @@ public final class MovementListener implements Listener {
                 savedFlySpeed.get(uuid), savedAllowFlight.get(uuid));
         }
 
-        collision.set(player, toSet.worldUses(Flags.DISABLE_COLLISION)
+        collision.set(player, !bypass && toSet.worldUses(Flags.DISABLE_COLLISION)
             && Boolean.TRUE.equals(toSet.queryValue(Flags.DISABLE_COLLISION)));
 
         if (toSet.worldUses(Flags.CHAT_PREFIX) || toSet.worldUses(Flags.CHAT_SUFFIX)) {
@@ -1243,12 +1263,11 @@ public final class MovementListener implements Listener {
         }
 
         if (toSet.worldUses(Flags.SEND_CHAT) || toSet.worldUses(Flags.RECEIVE_CHAT)) {
-            final boolean bypass = Bypass.has(player);
             chatTags.setMuted(uuid, !bypass && !toSet.testState(Flags.SEND_CHAT, uuid));
             chatTags.setDeafened(uuid, !bypass && !toSet.testState(Flags.RECEIVE_CHAT, uuid));
         }
 
-        applyHidePlayers(player, uuid, toSet.worldUses(Flags.HIDE_PLAYERS)
+        applyHidePlayers(player, uuid, !bypass && toSet.worldUses(Flags.HIDE_PLAYERS)
             && Boolean.TRUE.equals(toSet.queryValue(Flags.HIDE_PLAYERS)));
     }
 

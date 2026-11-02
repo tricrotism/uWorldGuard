@@ -30,6 +30,7 @@ import com.tricrotism.uworldguard.wgcompat.SessionDispatch;
 import com.tricrotism.uworldguard.wgcompat.WgCompatBridge;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bstats.MetricsBase;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.ServicePriority;
 import org.jspecify.annotations.NullMarked;
@@ -85,6 +86,17 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         }
         if (current != null) {
             scheduleAutoSave(current);
+        }
+    }
+
+    /**
+     * Re-applies the region state around {@code player} now, so a bypass toggle takes effect before
+     * they next move.
+     */
+    public void refreshState(final Player player) {
+        final MovementListener listener = this.movement;
+        if (listener != null) {
+            listener.refresh(player);
         }
     }
 

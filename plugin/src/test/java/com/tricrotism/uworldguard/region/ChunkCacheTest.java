@@ -130,6 +130,44 @@ class ChunkCacheTest {
     }
 
     @Test
+    void chunksPastThirtyTwoCandidatesStillShareSetsAndMatchAScan() {
+        final RegionManager manager = new RegionManager();
+        final List<ProtectedRegion> regions = new ArrayList<>();
+        final ProtectedRegion spawn = new ProtectedCuboidRegion("spawn", BlockVector3.at(0, 0, 0), BlockVector3.at(15, 255, 15));
+        regions.add(spawn);
+        manager.addRegion(spawn);
+        // three floors of sixteen 4 by 4 rooms, so 48 rooms plus spawn in one chunk
+        for (int floor = 0; floor < 3; floor++) {
+            for (int x = 0; x < 16; x += 4) {
+                for (int z = 0; z < 16; z += 4) {
+                    final ProtectedRegion room = new ProtectedCuboidRegion("room" + floor + "_" + x + "_" + z,
+                        BlockVector3.at(x, floor * 20, z), BlockVector3.at(x + 3, floor * 20 + 19, z + 3));
+                    regions.add(room);
+                    manager.addRegion(room);
+                }
+            }
+        }
+        // not a cuboid, so its box hits still go through contains
+        final ProtectedRegion fountain = new ProtectedCylinderRegion("fountain", 8, 8, 3, 3, 0, 255);
+        regions.add(fountain);
+        manager.addRegion(fountain);
+        assertEquals(50, manager.regionsOverlappingChunk(8, 8));
+
+        final Random random = new Random(9);
+        for (int i = 0; i < 5000; i++) {
+            final int x = random.nextInt(16);
+            final int y = random.nextInt(70);
+            final int z = random.nextInt(16);
+            assertEquals(scan(regions, x, y, z), at(manager, x, y, z), "at " + x + " " + y + " " + z);
+        }
+
+        assertSame(manager.getApplicableRegions(1, 45, 1), manager.getApplicableRegions(2, 50, 2),
+            "two points in one room share a set");
+        manager.getRegion("room2_0_0").setFlag(Flags.PVP, State.DENY);
+        assertEquals(State.DENY, manager.getApplicableRegions(1, 45, 1).queryState(Flags.PVP));
+    }
+
+    @Test
     void anEditAfterLookupsReachesTheChunksAlreadyCached() {
         final RegionManager manager = new RegionManager();
         manager.addRegion(new ProtectedCuboidRegion("a", BlockVector3.at(-100, 0, -100), BlockVector3.at(-80, 255, -80)));

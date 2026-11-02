@@ -1,5 +1,6 @@
 package com.tricrotism.uworldguard.listeners;
 
+import com.tricrotism.uworldguard.config.Bypass;
 import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.flags.StateFlag;
@@ -152,7 +153,7 @@ public final class NaturalListener implements Listener {
             final Entity former = entityForm.getEntity();
             if (former instanceof Player walker) {
                 if (query.usesFlag(block.getWorld(), Flags.FROSTWALKER)
-                    && !query.testState(block, Flags.FROSTWALKER, walker)) {
+                    && !query.testState(block, Flags.FROSTWALKER, walker) && !Bypass.has(walker)) {
                     event.setCancelled(true);
                 }
                 return;

@@ -662,6 +662,15 @@ public final class RegionCommands {
             .append(set.canBuild(uuid)
                 ? Component.text("yes", NamedTextColor.GREEN)
                 : Component.text("no", NamedTextColor.RED));
+        final RegionManager manager = container.get(player.getWorld());
+        if (manager != null) {
+            final Location at = player.getLocation();
+            final int overlapping = manager.regionsOverlappingChunk(at.getBlockX(), at.getBlockZ());
+            message = message.append(Component.newline()).append(Component.text(
+                "  Regions over this chunk: " + overlapping
+                    + (overlapping > RegionManager.cachedChunkLimit() ? " (too many to cache lookups)" : ""),
+                CommandText.DESCRIPTION));
+        }
         sender.source().sendMessage(message);
     }
 
@@ -672,7 +681,9 @@ public final class RegionCommands {
         final Player player = asPlayer(sender);
         if (player == null) return;
 
-        if (Bypass.toggle(player)) {
+        final boolean on = Bypass.toggle(player);
+        plugin.refreshState(player);
+        if (on) {
             success(sender, "Bypass <green>on</green>, region protections no longer apply to you. "
                 + "It turns itself off when you log out.");
         } else {

@@ -716,6 +716,21 @@ public final class RegionManager {
         return cachedAt(x, y, z);
     }
 
+    /**
+     * How many regions overlap the chunk holding block {@code x, z} at any height. Past
+     * {@link #DENSE_CANDIDATES} the chunk's lookups go uncached.
+     */
+    public int regionsOverlappingChunk(final int x, final int z) {
+        return chunkCandidates(chunkKey(x, z)).regions().size();
+    }
+
+    /**
+     * Above this many regions in one chunk, lookups there are not cached.
+     */
+    public static int cachedChunkLimit() {
+        return DENSE_CANDIDATES;
+    }
+
     private ApplicableRegionSet indexedAt(final SpatialIndex index, final int x, final int y, final int z) {
         final List<ProtectedRegion> owned = index.candidatesAt(x, y, z);
         if (owned.isEmpty() || !retainContaining(owned, x, y, z)) {
@@ -758,30 +773,41 @@ public final class RegionManager {
         final int x, final int y, final int z
     ) {
         final int[] b = chunk.bounds();
-        int mask = 0;
-        for (int i = 0, o = 0; o < b.length; i++, o += 6) {
-            if (x >= b[o] && x <= b[o + 3] && y >= b[o + 1] && y <= b[o + 4] && z >= b[o + 2] && z <= b[o + 5]) {
-                mask |= 1 << i;
+        final long[] columns = chunk.columns();
+        long mask = 0L;
+        if (columns != null) {
+            for (long test = columns[((x & 15) << 4) | (z & 15)]; test != 0L; test &= test - 1) {
+                final int i = Long.numberOfTrailingZeros(test);
+                final int o = i * 6;
+                if (y >= b[o + 1] && y <= b[o + 4]) {
+                    mask |= 1L << i;
+                }
+            }
+        } else {
+            for (int i = 0, o = 0; o < b.length; i++, o += 6) {
+                if (x >= b[o] && x <= b[o + 3] && y >= b[o + 1] && y <= b[o + 4] && z >= b[o + 2] && z <= b[o + 5]) {
+                    mask |= 1L << i;
+                }
             }
         }
-        for (int test = mask & chunk.shaped(); test != 0; test &= test - 1) {
-            final int i = Integer.numberOfTrailingZeros(test);
+        for (long test = mask & chunk.shaped(); test != 0L; test &= test - 1) {
+            final int i = Long.numberOfTrailingZeros(test);
             if (!chunk.regions().get(i).contains(x, y, z)) {
-                mask &= ~(1 << i);
+                mask &= ~(1L << i);
             }
         }
-        if (mask == 0) {
+        if (mask == 0L) {
             return emptySet();
         }
         final long edits = flagEdits;
         if (chunk.hashed()) {
             return denseAt(chunk, sets, mask, edits);
         }
-        final CachedSet cached = sets.get(mask);
+        final CachedSet cached = sets.get((int) mask);
         if (cached != null && cached.edits() == edits) {
             return cached.set();
         }
-        return buildShared(chunk.regions(), sets, mask, mask, edits);
+        return buildShared(chunk.regions(), sets, (int) mask, mask, edits);
     }
 
     /**
@@ -790,9 +816,9 @@ public final class RegionManager {
      * other. A stale set is rebuilt in its own slot.
      */
     private ApplicableRegionSet denseAt(
-        final ChunkCandidates chunk, final AtomicReferenceArray<@Nullable CachedSet> sets, final int mask, final long edits
+        final ChunkCandidates chunk, final AtomicReferenceArray<@Nullable CachedSet> sets, final long mask, final long edits
     ) {
-        final int home = (mask * 0x9E3779B9) >>> (32 - DENSE_SLOT_BITS);
+        final int home = (int) ((mask * 0x9E3779B97F4A7C15L) >>> (64 - DENSE_SLOT_BITS));
         final int last = (1 << DENSE_SLOT_BITS) - 1;
         for (int i = 0; i <= last; i++) {
             final int slot = (home + i) & last;
@@ -809,11 +835,11 @@ public final class RegionManager {
 
     private ApplicableRegionSet buildShared(
         final List<ProtectedRegion> candidates, final AtomicReferenceArray<@Nullable CachedSet> sets,
-        final int slot, final int mask, final long edits
+        final int slot, final long mask, final long edits
     ) {
-        final List<ProtectedRegion> matches = new ArrayList<>(Integer.bitCount(mask));
+        final List<ProtectedRegion> matches = new ArrayList<>(Long.bitCount(mask));
         for (int i = 0, n = candidates.size(); i < n; i++) {
-            if ((mask & 1 << i) != 0) {
+            if ((mask & 1L << i) != 0L) {
                 matches.add(candidates.get(i));
             }
         }
@@ -897,11 +923,13 @@ public final class RegionManager {
         final int n = built.size();
         final ChunkCandidates fresh;
         if (n > 0 && n <= SHARED_SET_CANDIDATES) {
-            fresh = new ChunkCandidates(key, built, new AtomicReferenceArray<>(1 << n), false, bounds(built), shaped(built), edits);
+            fresh = new ChunkCandidates(key, built, new AtomicReferenceArray<>(1 << n), false, bounds(built), null, shaped(built), edits);
         } else if (n > 0 && n <= DENSE_CANDIDATES) {
-            fresh = new ChunkCandidates(key, built, new AtomicReferenceArray<>(1 << DENSE_SLOT_BITS), true, bounds(built), shaped(built), edits);
+            final int[] bounds = bounds(built);
+            fresh = new ChunkCandidates(key, built, new AtomicReferenceArray<>(1 << DENSE_SLOT_BITS), true, bounds,
+                columns(bounds, key), shaped(built), edits);
         } else {
-            fresh = new ChunkCandidates(key, built, null, false, NO_BOUNDS, 0, edits);
+            fresh = new ChunkCandidates(key, built, null, false, NO_BOUNDS, null, 0, edits);
         }
         if (first != null && first.key() != key) {
             cache.set(slot + 1, first);
@@ -930,13 +958,35 @@ public final class RegionManager {
     }
 
     /**
+     * For each of the chunk's 256 block columns, a bit per candidate whose box covers it, so a lookup
+     * in a dense chunk tests only those candidates' heights. 2 KB, built only for dense chunks.
+     */
+    private static long[] columns(final int[] bounds, final long key) {
+        final int baseX = ((int) (key >> 32)) << 4;
+        final int baseZ = ((int) key) << 4;
+        final long[] out = new long[256];
+        for (int i = 0, o = 0; o < bounds.length; i++, o += 6) {
+            final int fromX = Math.max(bounds[o] - baseX, 0);
+            final int toX = Math.min(bounds[o + 3] - baseX, 15);
+            final int fromZ = Math.max(bounds[o + 2] - baseZ, 0);
+            final int toZ = Math.min(bounds[o + 5] - baseZ, 15);
+            for (int lx = fromX; lx <= toX; lx++) {
+                for (int lz = fromZ; lz <= toZ; lz++) {
+                    out[(lx << 4) | lz] |= 1L << i;
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
      * A bit for each region whose shape is not its box, so a box hit still has to ask it.
      */
-    private static int shaped(final List<ProtectedRegion> regions) {
-        int mask = 0;
+    private static long shaped(final List<ProtectedRegion> regions) {
+        long mask = 0L;
         for (int i = 0, n = regions.size(); i < n; i++) {
             if (!(regions.get(i) instanceof ProtectedCuboidRegion)) {
-                mask |= 1 << i;
+                mask |= 1L << i;
             }
         }
         return mask;
@@ -1097,7 +1147,8 @@ public final class RegionManager {
          */
         private final boolean hashed;
         private final int[] bounds;
-        private final int shaped;
+        private final long @Nullable [] columns;
+        private final long shaped;
         /**
          * The {@link #geometryEdits} count this entry is known to hold at: read before it was filled,
          * then raised by reads that find no edit since reaching its chunk. Any value a thread sees was
@@ -1107,13 +1158,14 @@ public final class RegionManager {
 
         ChunkCandidates(
             final long key, final List<ProtectedRegion> regions, final @Nullable AtomicReferenceArray<@Nullable CachedSet> sets,
-            final boolean hashed, final int[] bounds, final int shaped, final long checked
+            final boolean hashed, final int[] bounds, final long @Nullable [] columns, final long shaped, final long checked
         ) {
             this.key = key;
             this.regions = regions;
             this.sets = sets;
             this.hashed = hashed;
             this.bounds = bounds;
+            this.columns = columns;
             this.shaped = shaped;
             this.checked = checked;
         }
@@ -1138,7 +1190,11 @@ public final class RegionManager {
             return bounds;
         }
 
-        int shaped() {
+        long @Nullable [] columns() {
+            return columns;
+        }
+
+        long shaped() {
             return shaped;
         }
     }
@@ -1149,7 +1205,7 @@ public final class RegionManager {
      * A region set shared by the points of one chunk that the same candidates contain, which
      * candidates those are, and the {@link #flagEdits} count it was built at.
      */
-    private record CachedSet(int mask, long edits, ApplicableRegionSet set) {}
+    private record CachedSet(long mask, long edits, ApplicableRegionSet set) {}
 
     /**
      * Chunks with up to this many candidates index their sets by mask. Six keeps a chunk's table at
@@ -1158,18 +1214,19 @@ public final class RegionManager {
     private static final int SHARED_SET_CANDIDATES = 6;
 
     /**
-     * Chunks with more, up to one per bit of an int, share sets through a 64-slot table keyed by a hash
+     * Chunks with more, up to one per bit of a long, share sets through a 64-slot table keyed by a hash
      * of the mask, since a shop row or a plot grid puts a dozen or more claims in one chunk. Beyond this
-     * a chunk builds a set per lookup.
+     * a chunk builds a set per lookup. Sixty-four rather than 32 because a production profile spent 90%
+     * of its lookup time in chunks past 32, each asking the storage index per point.
      */
-    private static final int DENSE_CANDIDATES = 32;
+    private static final int DENSE_CANDIDATES = 64;
     private static final int DENSE_SLOT_BITS = 6;
 
     /**
      * With a storage index installed, chunks are filled from it once and points are answered here.
      * A chunk with more candidates than this asks the index per point instead of scanning them all.
      */
-    private static final int INDEXED_CANDIDATES = 32;
+    private static final int INDEXED_CANDIDATES = DENSE_CANDIDATES;
 
     /**
      * A region came, went or was replaced. The grid takes the change in place, then the edit is logged
