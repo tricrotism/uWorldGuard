@@ -84,7 +84,7 @@ public final class WorkbenchListener implements Listener {
         } else {
             return;
         }
-        if (Bypass.has(player) || set.flagSetContains(Flags.ALLOW_INTERACT, type)) {
+        if (Bypass.has(player) || set.flagSetContains(Flags.ALLOW_INTERACT, type, uuid)) {
             return;
         }
         event.setCancelled(true);

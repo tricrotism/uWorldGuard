@@ -437,6 +437,8 @@ public final class RegionQuery {
     }
 
     public <T> @Nullable T queryValue(final Entity entity, final Flag<T> flag) {
-        return getApplicableRegions(entity).queryValue(flag);
+        return entity instanceof Player player
+            ? getApplicableRegions(entity).queryValue(flag, player.getUniqueId())
+            : getApplicableRegions(entity).queryValue(flag);
     }
 }

@@ -61,15 +61,15 @@ public final class CommandListener implements Listener {
         final String bare = colon < 0 ? qualified : qualified.substring(colon + 1);
 
         if (hasBlocked
-            && (set.flagSetContains(Flags.BLOCKED_CMDS, qualified)
-            || colon >= 0 && set.flagSetContains(Flags.BLOCKED_CMDS, bare))) {
+            && (set.flagSetContains(Flags.BLOCKED_CMDS, qualified, player.getUniqueId())
+            || colon >= 0 && set.flagSetContains(Flags.BLOCKED_CMDS, bare, player.getUniqueId()))) {
             event.setCancelled(true);
             messages.sendDeny(player, Flags.BLOCKED_CMDS);
             return;
         }
 
         if (hasAllowed) {
-            final Set<String> allowed = set.queryValue(Flags.ALLOWED_CMDS);
+            final Set<String> allowed = set.queryValue(Flags.ALLOWED_CMDS, player.getUniqueId());
             if (allowed != null && !allowed.contains(qualified) && (colon < 0 || !allowed.contains(bare))) {
                 event.setCancelled(true);
                 messages.sendDeny(player, Flags.BLOCKED_CMDS);

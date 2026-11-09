@@ -28,6 +28,24 @@ import java.util.Set;
 public final class FlagGroupSupport {
 
     private static final Set<Flag<?>> HONOURED = Set.of(
+        // Player-specific values and per-region crossing effects
+        Flags.GAME_MODE, Flags.WALK_SPEED, Flags.FLY_SPEED, Flags.FLY,
+        Flags.DISABLE_COLLISION, Flags.CHAT_PREFIX, Flags.CHAT_SUFFIX, Flags.HIDE_PLAYERS,
+        Flags.GREETING, Flags.GREETING_TITLE, Flags.FAREWELL, Flags.FAREWELL_TITLE,
+        Flags.COMMAND_ON_ENTRY, Flags.CONSOLE_COMMAND_ON_ENTRY,
+        Flags.COMMAND_ON_EXIT, Flags.CONSOLE_COMMAND_ON_EXIT,
+        Flags.PLAY_SOUNDS, Flags.TELEPORT_ON_ENTRY, Flags.TELEPORT_ON_EXIT,
+        Flags.NOTIFY_ENTER, Flags.NOTIFY_LEAVE,
+        Flags.ENTRY_MIN_LEVEL, Flags.ENTRY_MAX_LEVEL, Flags.PLAYER_COUNT_LIMIT,
+        Flags.ENTRY_DENY_MESSAGE, Flags.EXIT_DENY_MESSAGE, Flags.EXIT_OVERRIDE,
+        Flags.HEAL_AMOUNT, Flags.HEAL_DELAY, Flags.HEAL_MIN_HEALTH, Flags.HEAL_MAX_HEALTH,
+        Flags.FEED_AMOUNT, Flags.FEED_DELAY, Flags.MIN_FOOD, Flags.MAX_FOOD,
+        Flags.TIME_LOCK, Flags.WEATHER_LOCK, Flags.GIVE_EFFECTS, Flags.BLOCKED_EFFECTS,
+        Flags.KEEP_INVENTORY, Flags.KEEP_EXP, Flags.RESPAWN_LOCATION, Flags.JOIN_LOCATION,
+        Flags.INVINCIBLE, Flags.GODMODE, Flags.DISABLE_THROW, Flags.DISABLE_COMPLETELY,
+        Flags.DENY_ITEM_DROPS, Flags.DENY_ITEM_PICKUP, Flags.BLOCKED_CMDS, Flags.ALLOWED_CMDS,
+        Flags.TELEPORT, Flags.TELEPORT_MESSAGE,
+        Flags.DENY_BLOCK_BREAK, Flags.DENY_BLOCK_PLACE, Flags.ALLOW_BLOCK_PLACE,
         // ApplicableRegionSet.canBuild
         Flags.BUILD,
         // BuildProtectionListener.onBreak

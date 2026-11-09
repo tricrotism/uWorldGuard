@@ -108,7 +108,7 @@ import java.util.UUID;
     static boolean explicitlyAllowed(
         final ApplicableRegionSet set, final UUID uuid, final Block block, final Material type
     ) {
-        if (set.flagSetContains(Flags.ALLOW_INTERACT, type)) {
+        if (set.flagSetContains(Flags.ALLOW_INTERACT, type, uuid)) {
             return true;
         }
         if (type == Material.RESPAWN_ANCHOR) {

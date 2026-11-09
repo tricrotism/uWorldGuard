@@ -275,7 +275,7 @@ public final class ApplicableRegionSet {
         // One volatile read rules out the whole check for the overwhelmingly common case of a world
         // with no group qualifiers anywhere, keeping flag resolution exactly as cheap as before
         // qualifiers existed.
-        if (!groupsInUse) {
+        if (!groupsActive()) {
             return true;
         }
         final RegionGroup group = region.getFlagGroup(flag);
@@ -283,6 +283,10 @@ public final class ApplicableRegionSet {
             return true;
         }
         return group.contains(subject == null ? null : region.getAssociation(subject));
+    }
+
+    private boolean groupsActive() {
+        return groupsInUse || owner != null && !fresh() && owner.anyFlagGroups();
     }
 
     /**
@@ -309,7 +313,7 @@ public final class ApplicableRegionSet {
         }
 
         if (top == null) {
-            final State g = global != null ? global.getFlag(Flags.BUILD) : null;
+            final State g = global != null && appliesTo(global, Flags.BUILD, subject) ? global.getFlag(Flags.BUILD) : null;
             return g != State.DENY;
         }
 
@@ -462,6 +466,71 @@ public final class ApplicableRegionSet {
         return g != null && !Collections.disjoint(g, candidates);
     }
 
+    /** Whether any contributing set contains the element for this subject. */
+    public <E> boolean flagSetContains(final Flag<Set<E>> flag, final E element, final @Nullable UUID subject) {
+        if (!groupsActive()) {
+            return flagSetContains(flag, element);
+        }
+        if (!worldUsesOrUnknown(flag)) {
+            return false;
+        }
+        for (int i = 0, n = applicable.size() + 1; i < n; i++) {
+            final ProtectedRegion region = i < n - 1 ? applicable.get(i) : global;
+            final Set<E> set = region != null && appliesTo(region, flag, subject) ? region.getFlag(flag) : null;
+            if (set != null && set.contains(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Merge all sets applicable to the subject, without changing union precedence. */
+    public <E> Set<E> flagSetUnion(final Flag<Set<E>> flag, final @Nullable UUID subject) {
+        if (!groupsActive()) {
+            return flagSetUnion(flag);
+        }
+        if (!worldUsesOrUnknown(flag)) {
+            return Set.of();
+        }
+        Set<E> union = null;
+        boolean copied = false;
+        for (int i = 0, n = applicable.size() + 1; i < n; i++) {
+            final ProtectedRegion region = i < n - 1 ? applicable.get(i) : global;
+            final Set<E> set = region != null && appliesTo(region, flag, subject) ? region.getFlag(flag) : null;
+            if (set == null || set.isEmpty()) {
+                continue;
+            }
+            if (union == null) {
+                union = set;
+            } else {
+                if (!copied) {
+                    union = new HashSet<>(union);
+                    copied = true;
+                }
+                union.addAll(set);
+            }
+        }
+        return union == null ? Set.of() : union;
+    }
+
+    /** Whether any set applicable to the subject intersects the candidates. */
+    public <E> boolean flagSetIntersects(final Flag<Set<E>> flag, final Set<E> candidates, final @Nullable UUID subject) {
+        if (!groupsActive()) {
+            return flagSetIntersects(flag, candidates);
+        }
+        if (candidates.isEmpty() || !worldUsesOrUnknown(flag)) {
+            return false;
+        }
+        for (int i = 0, n = applicable.size() + 1; i < n; i++) {
+            final ProtectedRegion region = i < n - 1 ? applicable.get(i) : global;
+            final Set<E> set = region != null && appliesTo(region, flag, subject) ? region.getFlag(flag) : null;
+            if (set != null && !Collections.disjoint(set, candidates)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Resolve a typed (non-state) flag: highest-priority region that sets it wins.
      */
@@ -524,7 +593,7 @@ public final class ApplicableRegionSet {
      * {@link RegionGroup} the subject is not in is skipped, and the next region down answers.
      */
     public <T> @Nullable T queryValue(final Flag<T> flag, final @Nullable UUID subject) {
-        if (!groupsInUse) {
+        if (!groupsActive()) {
             return queryValue(flag);
         }
         if (!worldUsesOrUnknown(flag)) {
@@ -588,7 +657,7 @@ public final class ApplicableRegionSet {
         }
         final SpatialIndex.FlagResolver r = resolver;
         if (r != null && r.resolves(flag)) {
-            return r.resolveState(flag, subject, groupsInUse);
+            return r.resolveState(flag, subject, groupsActive());
         }
         boolean found = false;
         int bestPriority = 0;

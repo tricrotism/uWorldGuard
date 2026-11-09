@@ -300,7 +300,8 @@ public final class PlacedBlocks implements Listener {
         final ApplicableRegionSet set, final @Nullable UUID subject, final Block block, final Material type
     ) {
         return set.queryState(FLAG, subject) == State.ALLOW
-            && !set.flagSetContains(Flags.ALLOW_BLOCK_BREAK, type)
+            && !(subject == null ? set.flagSetContains(Flags.ALLOW_BLOCK_BREAK, type)
+                : set.flagSetContains(Flags.ALLOW_BLOCK_BREAK, type, subject))
             && !isPlaced(block, type);
     }
 

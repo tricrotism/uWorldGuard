@@ -67,7 +67,7 @@ public final class ItemUseListener implements Listener {
         }
         final Player player = event.getPlayer();
         final Material item = event.getItem().getType();
-        if (query.getApplicableRegions(player).flagSetContains(Flags.DISABLE_COMPLETELY, item)) {
+        if (query.getApplicableRegions(player).flagSetContains(Flags.DISABLE_COMPLETELY, item, player.getUniqueId())) {
             if (Bypass.has(player)) {
                 return;
             }
@@ -91,7 +91,7 @@ public final class ItemUseListener implements Listener {
         if (weapon.isAir()) {
             return;
         }
-        if (query.getApplicableRegions(event.getEntity()).flagSetContains(Flags.DISABLE_COMPLETELY, weapon)) {
+        if (query.getApplicableRegions(event.getEntity()).flagSetContains(Flags.DISABLE_COMPLETELY, weapon, player.getUniqueId())) {
             if (Bypass.has(player)) {
                 return;
             }
@@ -117,7 +117,7 @@ public final class ItemUseListener implements Listener {
         if (!holdingTotem) {
             return;
         }
-        if (query.getApplicableRegions(player).flagSetContains(Flags.DISABLE_COMPLETELY, Material.TOTEM_OF_UNDYING)) {
+        if (query.getApplicableRegions(player).flagSetContains(Flags.DISABLE_COMPLETELY, Material.TOTEM_OF_UNDYING, player.getUniqueId())) {
             if (Bypass.has(player)) {
                 return;
             }
@@ -142,7 +142,7 @@ public final class ItemUseListener implements Listener {
         if (!(shooter instanceof Player player)) {
             return;
         }
-        if (Boolean.TRUE.equals(query.getApplicableRegions(player).queryValue(Flags.DISABLE_THROW))) {
+        if (Boolean.TRUE.equals(query.getApplicableRegions(player).queryValue(Flags.DISABLE_THROW, player.getUniqueId()))) {
             if (Bypass.has(player)) {
                 return;
             }
@@ -190,8 +190,13 @@ public final class ItemUseListener implements Listener {
             return;
         }
         final Entity victim = event.getEntity();
-        if (!query.usesFlag(victim.getWorld(), Flags.WIND_CHARGE)
-            || query.testState(victim, Flags.WIND_CHARGE)) {
+        if (!query.usesFlag(victim.getWorld(), Flags.WIND_CHARGE)) {
+            return;
+        }
+        final boolean allowed = pushedBy instanceof Player player
+            ? query.getApplicableRegions(victim).testState(Flags.WIND_CHARGE, player.getUniqueId())
+            : query.testState(victim, Flags.WIND_CHARGE);
+        if (allowed) {
             return;
         }
         if (pushedBy instanceof Player player && Bypass.has(player)) {
@@ -238,7 +243,7 @@ public final class ItemUseListener implements Listener {
             return;
         }
         if (set.worldUses(Flags.DENY_ITEM_DROPS)
-            && set.flagSetContains(Flags.DENY_ITEM_DROPS, event.getItemDrop().getItemStack().getType())) {
+            && set.flagSetContains(Flags.DENY_ITEM_DROPS, event.getItemDrop().getItemStack().getType(), player.getUniqueId())) {
             if (Bypass.has(player)) {
                 return;
             }
@@ -263,7 +268,7 @@ public final class ItemUseListener implements Listener {
         final ApplicableRegionSet set = query.getApplicableRegions(player);
         if (!set.testState(Flags.ITEM_PICKUP, player.getUniqueId())
             || set.worldUses(Flags.DENY_ITEM_PICKUP)
-            && set.flagSetContains(Flags.DENY_ITEM_PICKUP, event.getItem().getItemStack().getType())) {
+            && set.flagSetContains(Flags.DENY_ITEM_PICKUP, event.getItem().getItemStack().getType(), player.getUniqueId())) {
             if (Bypass.has(player)) {
                 return;
             }

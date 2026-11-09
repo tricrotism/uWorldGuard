@@ -168,7 +168,7 @@ public final class PlayerStateListener implements Listener {
         if (from.testState(Flags.EXIT_VIA_TELEPORT, uuid) || from.testState(Flags.EXIT, uuid)) {
             return;
         }
-        if (Boolean.TRUE.equals(from.queryValue(Flags.EXIT_OVERRIDE))) {
+        if (Boolean.TRUE.equals(from.queryValue(Flags.EXIT_OVERRIDE, player.getUniqueId()))) {
             return;
         }
         if (!from.testState(Flags.ENTRY, uuid) && !isMember(from, uuid)) {
@@ -178,7 +178,7 @@ public final class PlayerStateListener implements Listener {
         for (int i = 0, n = from.size(); i < n; i++) {
             if (!contains(destination, from.get(i))) {
                 event.setCancelled(true);
-                messages.sendFlag(player, from.queryValue(Flags.EXIT_DENY_MESSAGE), "exit-denied");
+                messages.sendFlag(player, from.queryValue(Flags.EXIT_DENY_MESSAGE, player.getUniqueId()), "exit-denied");
                 return;
             }
         }
@@ -224,7 +224,7 @@ public final class PlayerStateListener implements Listener {
         if (type == Material.RESPAWN_ANCHOR) {
             final ApplicableRegionSet anchorSet = query.getApplicableRegions(block);
             if (!anchorSet.testBuild(player.getUniqueId(), Flags.RESPAWN_ANCHORS) && !Bypass.has(player)
-                && !anchorSet.flagSetContains(Flags.ALLOW_INTERACT, Material.RESPAWN_ANCHOR)) {
+                && !anchorSet.flagSetContains(Flags.ALLOW_INTERACT, Material.RESPAWN_ANCHOR, player.getUniqueId())) {
                 event.setCancelled(true);
                 messages.sendRegionDeny(player, Flags.RESPAWN_ANCHORS, anchorSet);
             }
@@ -235,7 +235,7 @@ public final class PlayerStateListener implements Listener {
         }
         final ApplicableRegionSet set = query.getApplicableRegions(block);
         if (!set.testBuild(player.getUniqueId(), Flags.CHEST_ACCESS)) {
-            if (Bypass.has(player) || set.flagSetContains(Flags.ALLOW_INTERACT, type)) {
+            if (Bypass.has(player) || set.flagSetContains(Flags.ALLOW_INTERACT, type, player.getUniqueId())) {
                 return;
             }
             event.setCancelled(true);
@@ -318,8 +318,8 @@ public final class PlayerStateListener implements Listener {
             return;
         }
         final ApplicableRegionSet set = query.getApplicableRegions(player);
-        if (invincibility && (Boolean.TRUE.equals(set.queryValue(Flags.INVINCIBLE))
-            || Boolean.TRUE.equals(set.queryValue(Flags.GODMODE)))) {
+        if (invincibility && (Boolean.TRUE.equals(set.queryValue(Flags.INVINCIBLE, player.getUniqueId()))
+            || Boolean.TRUE.equals(set.queryValue(Flags.GODMODE, player.getUniqueId())))) {
             event.setCancelled(true);
             return;
         }

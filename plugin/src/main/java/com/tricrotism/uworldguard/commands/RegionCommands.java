@@ -766,7 +766,8 @@ public final class RegionCommands {
             return;
         }
 
-        final String flagged = region.getFlag(Flags.TELEPORT);
+        final String flagged = region.getFlagGroup(Flags.TELEPORT).contains(region.getAssociation(player.getUniqueId()))
+            ? region.getFlag(Flags.TELEPORT) : null;
         if (flagged != null && !flagged.isBlank()) {
             final Location target = Locations.parse(messages.expand(player, flagged));
             if (target == null) {
@@ -794,7 +795,8 @@ public final class RegionCommands {
         final Source sender, final Player player, final ProtectedRegion region, final Location target
     ) {
         player.teleportAsync(target);
-        final String custom = region.getFlag(Flags.TELEPORT_MESSAGE);
+        final String custom = region.getFlagGroup(Flags.TELEPORT_MESSAGE).contains(region.getAssociation(player.getUniqueId()))
+            ? region.getFlag(Flags.TELEPORT_MESSAGE) : null;
         if (custom == null) {
             success(sender, "Teleported to <aqua><id></aqua>.", Placeholder.unparsed("id", region.getId()));
         } else if (!custom.isBlank()) {
