@@ -105,6 +105,13 @@ class WorldFlagCommandTest {
     }
 
     @Test
+    void anEscapedNewlineBecomesALineBreak() {
+        run(server.getConsoleSender(), "rg flag spawn deny-message First\\nSecond \\\\n kept -w arena");
+
+        assertEquals("First\nSecond \\n kept", spawn.getFlag(Flags.DENY_MESSAGE));
+    }
+
+    @Test
     void aNegativeValueIsNotReadAsAFlag() {
         run(server.getConsoleSender(), "rg flag spawn walk-speed -0.5 -w arena");
 

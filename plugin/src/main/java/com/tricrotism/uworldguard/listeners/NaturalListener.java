@@ -8,6 +8,7 @@ import com.tricrotism.uworldguard.region.ApplicableRegionSet;
 import com.tricrotism.uworldguard.region.RegionQuery;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.data.type.Farmland;
 import org.bukkit.entity.Entity;
@@ -20,9 +21,12 @@ import org.bukkit.event.block.*;
 import org.bukkit.event.world.PortalCreateEvent;
 import org.bukkit.event.world.StructureGrowEvent;
 import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Enforces world/environment flags that have no associated player: fluid flow, fire
@@ -75,6 +79,13 @@ public final class NaturalListener implements Listener {
             return;
         }
         final Block from = event.getBlock();
+        if (event.getFace() == BlockFace.SELF) {
+            if (!MachineListener.machineMayAct(query.getApplicableRegions(from),
+                query.getApplicableRegions(event.getToBlock()), Flags.BLOCK_PLACE)) {
+                event.setCancelled(true);
+            }
+            return;
+        }
         if (!query.usesAnyFlag(from.getWorld(), FLOW_FLAGS)) {
             return;
         }
@@ -152,8 +163,8 @@ public final class NaturalListener implements Listener {
         if (event instanceof EntityBlockFormEvent entityForm) {
             final Entity former = entityForm.getEntity();
             if (former instanceof Player walker) {
-                if (query.usesFlag(block.getWorld(), Flags.FROSTWALKER)
-                    && !query.testState(block, Flags.FROSTWALKER, walker) && !Bypass.has(walker)) {
+                if (!query.getApplicableRegions(block).testBuild(walker.getUniqueId(), Flags.FROSTWALKER)
+                    && !Bypass.has(walker)) {
                     event.setCancelled(true);
                 }
                 return;
@@ -306,13 +317,50 @@ public final class NaturalListener implements Listener {
         if (EventGate.disabled(event)) {
             return;
         }
-        if (!query.usesFlag(event.getWorld(), Flags.TREE_GROWTH)) {
-            return;
+        final List<BlockState> blocks = event.getBlocks();
+        final boolean any = !blocks.isEmpty();
+        keepWithinBorder(blocks, event.getPlayer(), event.getLocation().getBlock());
+        if (query.usesFlag(event.getWorld(), Flags.TREE_GROWTH)) {
+            blocks.removeIf(state -> !query.testState(state.getBlock(), Flags.TREE_GROWTH));
         }
-        event.getBlocks().removeIf(state -> !query.testState(state.getBlock(), Flags.TREE_GROWTH));
-        if (event.getBlocks().isEmpty()) {
+        if (any && blocks.isEmpty()) {
             event.setCancelled(true);
         }
+    }
+
+    /**
+     * Bone meal spreading moss, grass, flowers or a mushroom. It fires no block-place event, so
+     * without this a click or a dispenser just outside a region grows straight into it.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onFertilize(final BlockFertilizeEvent event) {
+        if (EventGate.disabled(event)) {
+            return;
+        }
+        final List<BlockState> blocks = event.getBlocks();
+        final boolean any = !blocks.isEmpty();
+        keepWithinBorder(blocks, event.getPlayer(), event.getBlock());
+        if (any && blocks.isEmpty()) {
+            event.setCancelled(true);
+        }
+    }
+
+    /**
+     * Drops the grown blocks the cause may not place: for a player by their build rights, otherwise by
+     * whether the block lands in a region {@code origin} does not stand in, as for a dispenser.
+     */
+    private void keepWithinBorder(final List<BlockState> blocks, final @Nullable Player player, final Block origin) {
+        if (player != null) {
+            if (!Bypass.has(player)) {
+                final UUID uuid = player.getUniqueId();
+                blocks.removeIf(state -> !query.getApplicableRegions(state.getWorld(),
+                    state.getX(), state.getY(), state.getZ()).testBuild(uuid, Flags.BLOCK_PLACE));
+            }
+            return;
+        }
+        final ApplicableRegionSet from = query.getApplicableRegions(origin);
+        blocks.removeIf(state -> !MachineListener.machineMayAct(from, query.getApplicableRegions(
+            state.getWorld(), state.getX(), state.getY(), state.getZ()), Flags.BLOCK_PLACE));
     }
 
     /**

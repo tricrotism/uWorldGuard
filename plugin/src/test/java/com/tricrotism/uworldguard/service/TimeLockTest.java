@@ -57,8 +57,9 @@ class TimeLockTest {
 
         player = server.addPlayer();
         player.teleport(new Location(spawn, 0, 64, 0));
-        service = new PlayerTickService(plugin, container, container.createQuery());
-        service.start();
+        service = new PlayerTickService(plugin, container, container.createQuery(),
+            new ChunkUnloadService(plugin, container));
+        service.start(null);
         server.getScheduler().performTicks(20);
         assertEquals(11750L, player.getPlayerTime());
         assertFalse(player.isPlayerTimeRelative());

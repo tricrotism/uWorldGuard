@@ -6,9 +6,7 @@ import com.tricrotism.uworldguard.flags.State;
 import com.tricrotism.uworldguard.region.ProtectedCuboidRegion;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
 import com.tricrotism.uworldguard.region.RegionManager;
-import com.tricrotism.uworldguard.service.ChamberedPearlTracker;
-import com.tricrotism.uworldguard.service.CollisionService;
-import com.tricrotism.uworldguard.service.PendingRestores;
+import com.tricrotism.uworldguard.service.*;
 import com.tricrotism.uworldguard.storage.RegionStore;
 import com.tricrotism.uworldguard.text.ChatTags;
 import com.tricrotism.uworldguard.text.MessageService;
@@ -70,7 +68,9 @@ class TeleportCrossingTest {
 
         final MovementListener movement = new MovementListener(plugin, container.createQuery(),
             new MessageService(plugin), new CollisionService(plugin), new ChamberedPearlTracker(plugin),
-            new ChatTags(), new PendingRestores(plugin), new Settings());
+            new ChatTags(), new PendingRestores(plugin),
+            new PlayerTickService(plugin, container, container.createQuery(),
+                new ChunkUnloadService(plugin, container)), new Settings());
         server.getPluginManager().registerEvents(movement, plugin);
 
         player = server.addPlayer();

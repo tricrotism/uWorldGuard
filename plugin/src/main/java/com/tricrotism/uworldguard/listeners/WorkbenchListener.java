@@ -54,7 +54,7 @@ public final class WorkbenchListener implements Listener {
         if (EventGate.disabled(event)) {
             return;
         }
-        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || event.getHand() != EquipmentSlot.HAND) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK) {
             return;
         }
         if (!container.anyRegionUses(Flags.PERMIT_WORKBENCHES) && !container.anyRegionUses(Flags.USE_ANVIL)) {
@@ -88,7 +88,9 @@ public final class WorkbenchListener implements Listener {
             return;
         }
         event.setCancelled(true);
-        messages.sendDeny(player, denied);
+        if (event.getHand() == EquipmentSlot.HAND) {
+            messages.sendDeny(player, denied);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)

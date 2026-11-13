@@ -3,6 +3,8 @@ package com.tricrotism.uworldguard.integration;
 import com.tricrotism.uworldguard.listeners.MovementListener;
 import com.tricrotism.uworldguard.listeners.PlayerStateListener;
 import com.tricrotism.uworldguard.listeners.TravelListener;
+import com.tricrotism.uworldguard.region.RegionContainerImpl;
+import com.tricrotism.uworldguard.wgcompat.SessionDispatch;
 import org.bukkit.*;
 import org.bukkit.entity.EnderPearl;
 import org.bukkit.entity.Entity;
@@ -34,8 +36,15 @@ public final class FoliaTeleports implements Listener {
     private final PlayerStateListener state;
     private final MovementListener movement;
     private final TravelListener travel;
+    private final RegionContainerImpl container;
 
-    FoliaTeleports(final PlayerStateListener state, final MovementListener movement, final TravelListener travel) {
+    FoliaTeleports(
+        final PlayerStateListener state,
+        final MovementListener movement,
+        final TravelListener travel,
+        final RegionContainerImpl container
+    ) {
+        this.container = container;
         this.state = state;
         this.movement = movement;
         this.travel = travel;
@@ -46,14 +55,19 @@ public final class FoliaTeleports implements Listener {
      * {@link CanvasTeleports} did not register, since Canvas is also a Folia and has a better bridge.
      */
     public static void register(
-        final Plugin plugin, final PlayerStateListener state, final MovementListener movement, final TravelListener travel
+        final Plugin plugin,
+        final PlayerStateListener state,
+        final MovementListener movement,
+        final TravelListener travel,
+        final RegionContainerImpl container
     ) {
         try {
             Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
         } catch (final ClassNotFoundException e) {
             return;
         }
-        plugin.getServer().getPluginManager().registerEvents(new FoliaTeleports(state, movement, travel), plugin);
+        plugin.getServer().getPluginManager().registerEvents(
+            new FoliaTeleports(state, movement, travel, container), plugin);
         plugin.getLogger().info("Folia detected: pearls, chorus fruit and portals are judged before they happen, "
             + "but other teleports fire no event here.");
     }
@@ -103,6 +117,9 @@ public final class FoliaTeleports implements Listener {
     public void onPortalEnter(final EntityPortalEnterEvent event) {
         final Entity entity = event.getEntity();
         if (!(entity instanceof Player) && entity.isEmpty()) {
+            return;
+        }
+        if (!SessionDispatch.ACTIVE && !container.anyRules()) {
             return;
         }
         final World target = leadsTo(entity.getWorld(), event.getPortalType());

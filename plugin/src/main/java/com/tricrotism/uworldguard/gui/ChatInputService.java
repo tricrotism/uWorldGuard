@@ -19,16 +19,23 @@ public final class ChatInputService {
     /**
      * What to do with the typed value, and what to do if the player types {@code cancel} instead.
      */
-    public record Prompt(Consumer<String> onValue, Runnable onCancel) {}
+    public record Prompt(Consumer<String> onValue, Runnable onCancel, long expiresAt) {}
+
+    private static final long ANSWER_WINDOW_MILLIS = 120_000L;
 
     private final Map<UUID, Prompt> pending = new ConcurrentHashMap<>();
 
     public void await(final UUID player, final Consumer<String> onValue, final Runnable onCancel) {
-        pending.put(player, new Prompt(onValue, onCancel));
+        pending.put(player, new Prompt(onValue, onCancel, System.currentTimeMillis() + ANSWER_WINDOW_MILLIS));
     }
 
+    /**
+     * The prompt this player is answering, or {@code null}. One left unanswered for two minutes is
+     * dropped, so a chat line typed much later is chat again and not a flag value.
+     */
     public @Nullable Prompt take(final UUID player) {
-        return pending.remove(player);
+        final Prompt prompt = pending.remove(player);
+        return prompt == null || System.currentTimeMillis() > prompt.expiresAt() ? null : prompt;
     }
 
     public void cancel(final UUID player) {

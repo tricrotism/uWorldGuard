@@ -320,10 +320,20 @@ public final class PlacedBlocks implements Listener {
         }
         final boolean exemptions = query.usesFlag(world, Flags.ALLOW_BLOCK_BREAK);
         final Set<Block> map = Collections.newSetFromMap(new IdentityHashMap<>());
+        int lastCx = Integer.MIN_VALUE;
+        int lastCz = Integer.MIN_VALUE;
+        long[] entries = NONE;
         for (int i = 0, n = flagged.size(); i < n; i++) {
             final Block block = flagged.get(i);
             final Material type = block.getType();
-            if (!isPlaced(block, type)
+            final int cx = block.getX() >> 4;
+            final int cz = block.getZ() >> 4;
+            if (cx != lastCx || cz != lastCz) {
+                entries = read(block);
+                lastCx = cx;
+                lastCz = cz;
+            }
+            if (!isPlaced(entries, block, type)
                 && !(exemptions && query.getApplicableRegions(block).flagSetContains(Flags.ALLOW_BLOCK_BREAK, type))) {
                 map.add(block);
             }
@@ -424,8 +434,23 @@ public final class PlacedBlocks implements Listener {
         write(block, next, deferred);
     }
 
+    /**
+     * One block, the per-break path: a search and, only when the block was recorded, one copy.
+     */
     private void forget(final Block block) {
-        forgetIn(block, List.of(block), null);
+        final long[] entries = read(block);
+        final int at = entries.length == 0 ? -1 : find(entries, position(block));
+        if (at < 0) {
+            return;
+        }
+        if (entries.length == 1) {
+            write(block, NONE, null);
+            return;
+        }
+        final long[] next = new long[entries.length - 1];
+        System.arraycopy(entries, 0, next, 0, at);
+        System.arraycopy(entries, at + 1, next, at, next.length - at);
+        write(block, next, null);
     }
 
     /**
@@ -481,7 +506,10 @@ public final class PlacedBlocks implements Listener {
      * Whether a player placed {@code type} at this block's position.
      */
     private boolean isPlaced(final Block block, final Material type) {
-        final long[] entries = read(block);
+        return isPlaced(read(block), block, type);
+    }
+
+    private static boolean isPlaced(final long[] entries, final Block block, final Material type) {
         final long position = position(block);
         final int at = find(entries, position);
         return at >= 0 && entries[at] == entry(position, type);

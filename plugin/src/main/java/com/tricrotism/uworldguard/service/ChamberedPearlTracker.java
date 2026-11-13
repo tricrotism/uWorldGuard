@@ -43,7 +43,11 @@ public final class ChamberedPearlTracker {
      * does not own, and its own scheduler is the one place that question is safe to ask.
      */
     public void track(final UUID shooter, final EnderPearl pearl) {
-        byShooter.computeIfAbsent(shooter, k -> ConcurrentHashMap.newKeySet()).add(pearl);
+        byShooter.compute(shooter, (_, set) -> {
+            final Set<EnderPearl> pearls = set != null ? set : ConcurrentHashMap.newKeySet();
+            pearls.add(pearl);
+            return pearls;
+        });
         pearl.getScheduler().runDelayed(plugin, _ -> untrack(shooter, pearl), () -> untrack(shooter, pearl), EXPIRY_TICKS);
     }
 

@@ -10,9 +10,7 @@ import com.tricrotism.uworldguard.region.ProtectedCuboidRegion;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
 import com.tricrotism.uworldguard.region.RegionManager;
 import com.tricrotism.uworldguard.region.RegionQuery;
-import com.tricrotism.uworldguard.service.ChamberedPearlTracker;
-import com.tricrotism.uworldguard.service.CollisionService;
-import com.tricrotism.uworldguard.service.PendingRestores;
+import com.tricrotism.uworldguard.service.*;
 import com.tricrotism.uworldguard.storage.RegionStore;
 import com.tricrotism.uworldguard.text.ChatTags;
 import com.tricrotism.uworldguard.text.MessageService;
@@ -243,7 +241,9 @@ class CanvasTeleportsTest {
         final RegionQuery query = container.createQuery();
         final MessageService messages = new MessageService(plugin);
         final MovementListener movement = new MovementListener(plugin, query, messages, new CollisionService(plugin),
-            new ChamberedPearlTracker(plugin), new ChatTags(), new PendingRestores(plugin), new Settings());
+            new ChamberedPearlTracker(plugin), new ChatTags(), new PendingRestores(plugin),
+            new PlayerTickService(plugin, container, query, new ChunkUnloadService(plugin, container)),
+            new Settings());
         assertTrue(CanvasTeleports.register(plugin, new PlayerStateListener(query, messages), movement,
             new TravelListener(query), Before.class.getName(), After.class.getName(),
             PortalBefore.class.getName(), PortalAfter.class.getName()));

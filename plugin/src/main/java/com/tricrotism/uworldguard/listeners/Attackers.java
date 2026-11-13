@@ -43,6 +43,7 @@ import java.util.UUID;
         return switch (damager) {
             case Player player -> player;
             case Projectile projectile when projectile.getShooter() instanceof Player player -> player;
+            case AreaEffectCloud cloud when cloud.getSource() instanceof Player player -> player;
             case TNTPrimed tnt when tnt.getSource() instanceof Player player -> player;
             case LightningStrike bolt when bolt.getCausingEntity() instanceof Player player -> player;
             case Tameable pet when pet.isTamed() -> owner(pet);

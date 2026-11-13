@@ -42,6 +42,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -593,6 +594,8 @@ class BlacklistTest {
         final PlayerMock staff = server.addPlayer();
         staff.addAttachment(plugin, BlacklistService.NOTIFY_PERMISSION, true);
         final PlayerMock bystander = server.addPlayer();
+        service.useStaff(Set.of(staff.getUniqueId(), bystander.getUniqueId()));
+        assertTrue(service.notifies());
 
         assertFalse(place(player, world, Material.TNT));
         server.getScheduler().performTicks(2);

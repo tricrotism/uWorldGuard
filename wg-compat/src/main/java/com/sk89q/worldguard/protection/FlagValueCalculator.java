@@ -51,7 +51,7 @@ public class FlagValueCalculator {
     public Result getMembership(final RegionAssociable subject) {
         boolean anyProtecting = false;
         for (int i = 0, n = regions.size(); i < n; i++) {
-            if (regions.get(i).getFlag(Flags.PASSTHROUGH) != StateFlag.State.ALLOW) {
+            if (regions.get(i).uwgInheritedFlag(Flags.PASSTHROUGH) != StateFlag.State.ALLOW) {
                 anyProtecting = true;
                 break;
             }
@@ -190,7 +190,7 @@ public class FlagValueCalculator {
         if (!FlagQueryAlgorithms.appliesTo(region, flag, association)) {
             return null;
         }
-        final Map<K, V> map = region.getFlag(flag);
+        final Map<K, V> map = region.uwgInheritedFlag(flag);
         return map == null ? null : map.get(key);
     }
 

@@ -91,6 +91,16 @@ public final class ChatTags {
         deafened.remove(uuid);
     }
 
+    /**
+     * {@link #clear} for the movement path, where it runs on every block crossing: four emptiness
+     * reads and nothing else while no player on the server is tagged.
+     */
+    public void release(final UUID uuid) {
+        if (!prefixes.isEmpty() || !suffixes.isEmpty() || !muted.isEmpty() || !deafened.isEmpty()) {
+            clear(uuid);
+        }
+    }
+
     public boolean isEmpty() {
         return prefixes.isEmpty() && suffixes.isEmpty();
     }

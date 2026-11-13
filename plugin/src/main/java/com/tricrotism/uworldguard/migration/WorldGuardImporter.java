@@ -108,6 +108,12 @@ public final class WorldGuardImporter {
                 continue;
             }
 
+            if (!ProtectedRegion.isValidId(region.getId())) {
+                warnings.add("region '" + id + "': the id has characters uWorldGuard does not accept in a"
+                    + " new region. It was imported and protects as before, but it cannot be redefined"
+                    + " until it is recreated under another id");
+            }
+
             final ProtectedRegion existing = manager.getRegion(region.getId());
             if (existing != null && !overwrite && !isUntouchedGlobal(existing)) {
                 conflicts.add(region.getId());

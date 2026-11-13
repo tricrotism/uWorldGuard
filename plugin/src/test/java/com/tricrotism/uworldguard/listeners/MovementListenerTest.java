@@ -6,9 +6,7 @@ import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.region.ProtectedCuboidRegion;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
 import com.tricrotism.uworldguard.region.RegionManager;
-import com.tricrotism.uworldguard.service.ChamberedPearlTracker;
-import com.tricrotism.uworldguard.service.CollisionService;
-import com.tricrotism.uworldguard.service.PendingRestores;
+import com.tricrotism.uworldguard.service.*;
 import com.tricrotism.uworldguard.storage.RegionStore;
 import com.tricrotism.uworldguard.text.ChatTags;
 import com.tricrotism.uworldguard.text.MessageService;
@@ -20,6 +18,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Boat;
 import org.bukkit.entity.Pig;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.plugin.RegisteredListener;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -89,7 +88,9 @@ class MovementListenerTest {
 
     private MovementListener listener(final Settings settings) {
         return new MovementListener(plugin, container.createQuery(), new MessageService(plugin),
-            new CollisionService(plugin), new ChamberedPearlTracker(plugin), new ChatTags(), restores, settings);
+            new CollisionService(plugin), new ChamberedPearlTracker(plugin), new ChatTags(), restores,
+            new PlayerTickService(plugin, container, container.createQuery(),
+                new ChunkUnloadService(plugin, container)), settings);
     }
 
     private void register() {
@@ -235,6 +236,62 @@ class MovementListenerTest {
         } finally {
             Bypass.clear(player.getUniqueId());
         }
+    }
+
+    @Test
+    void aCrossingReachesStaffOnlyOnceTheyHoldTheNotifyPermission() throws Exception {
+        Files.writeString(new File(plugin.getDataFolder(), "messages.yml").toPath(),
+            "cooldown-seconds: 0\nmessages:\n  notify-enter: \"<gray><player> entered <region>\"\n",
+            StandardCharsets.UTF_8);
+        spawn().setFlag(Flags.NOTIFY_ENTER, true);
+        final PlayerTickService ticks = new PlayerTickService(plugin, container, container.createQuery(),
+            new ChunkUnloadService(plugin, container));
+        final MovementListener movement = new MovementListener(plugin, container.createQuery(),
+            new MessageService(plugin), new CollisionService(plugin), new ChamberedPearlTracker(plugin),
+            new ChatTags(), restores, ticks, new Settings());
+        server.getPluginManager().registerEvents(ticks, plugin);
+        movement.start();
+        final PlayerMock staff = server.addPlayer();
+        final Location outside = new Location(world, 100.5, 64, 100.5);
+        final Location inside = new Location(world, 10.5, 64, 10.5);
+        server.getScheduler().performTicks(20);
+
+        movement.onMove(new PlayerMoveEvent(player, outside, inside));
+        server.getScheduler().performTicks(1);
+        assertNull(staff.nextComponentMessage(), "no permission, no announcement");
+
+        staff.addAttachment(plugin, PlayerTickService.NOTIFY_PERMISSION, true);
+        server.getScheduler().performTicks(20);
+        movement.onMove(new PlayerMoveEvent(player, inside, outside));
+        movement.onMove(new PlayerMoveEvent(player, outside, inside));
+        server.getScheduler().performTicks(1);
+        assertNotNull(staff.nextComponentMessage(), "staff hear the crossing within a second of holding it");
+        assertNull(player.nextComponentMessage(), "the mover is not staff");
+    }
+
+    @Test
+    void aFullRegionRefusesEntryAndOneTheWorldCannotFillDoesNot() {
+        final ProtectedCuboidRegion region = spawn();
+        final MovementListener movement = listener(new Settings());
+        final PlayerMock inside = server.addPlayer();
+        inside.setLocation(new Location(world, 5.5, 64, 5.5));
+        final Location from = new Location(world, 100.5, 64, 100.5);
+        final Location to = new Location(world, 10.5, 64, 10.5);
+
+        region.setFlag(Flags.PLAYER_COUNT_LIMIT, 1);
+        final PlayerMoveEvent full = new PlayerMoveEvent(player, from, to);
+        movement.onMove(full);
+        assertTrue(full.isCancelled(), "one inside a limit of one is full");
+
+        region.setFlag(Flags.PLAYER_COUNT_LIMIT, 2);
+        final PlayerMoveEvent room = new PlayerMoveEvent(player, from, to);
+        movement.onMove(room);
+        assertFalse(room.isCancelled(), "one inside a limit of two has room");
+
+        region.setFlag(Flags.PLAYER_COUNT_LIMIT, 5);
+        final PlayerMoveEvent spare = new PlayerMoveEvent(player, from, to);
+        movement.onMove(spare);
+        assertFalse(spare.isCancelled(), "two players in the world cannot fill five");
     }
 
     @Test

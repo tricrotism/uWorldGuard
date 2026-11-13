@@ -9,6 +9,7 @@ import com.tricrotism.uworldguard.storage.RegionStore;
 import com.tricrotism.uworldguard.util.BlockVector3;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.event.block.BlockFormEvent;
 import org.bukkit.event.block.BlockFromToEvent;
@@ -68,9 +69,24 @@ class NaturalProtectionTest {
     private boolean water(final int x, final int z) {
         final Block source = world.getBlockAt(x, 64, z);
         source.setType(Material.WATER);
-        final BlockFromToEvent event = new BlockFromToEvent(source, world.getBlockAt(x + 1, 64, z));
+        final BlockFromToEvent event = new BlockFromToEvent(source, BlockFace.EAST);
         listener.onFromTo(event);
         return !event.isCancelled();
+    }
+
+    @Test
+    void aDragonEggDoesNotTeleportIntoAClaimFromOutside() {
+        claim("plot");
+        final Block egg = world.getBlockAt(40, 64, 16);
+        egg.setType(Material.DRAGON_EGG);
+        final BlockFromToEvent into = new BlockFromToEvent(egg, world.getBlockAt(30, 64, 16));
+        final BlockFromToEvent away = new BlockFromToEvent(egg, world.getBlockAt(45, 64, 16));
+
+        listener.onFromTo(into);
+        listener.onFromTo(away);
+
+        assertTrue(into.isCancelled());
+        assertFalse(away.isCancelled());
     }
 
     private boolean decay(final int x, final int z) {

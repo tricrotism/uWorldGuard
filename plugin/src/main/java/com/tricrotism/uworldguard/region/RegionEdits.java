@@ -1,9 +1,13 @@
 package com.tricrotism.uworldguard.region;
 
 import com.tricrotism.uworldguard.event.RegionChangeEvent;
+import com.tricrotism.uworldguard.flags.Flag;
+import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.text.Messages;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
+import org.bukkit.command.CommandSender;
 import org.jspecify.annotations.NullMarked;
 
 /**
@@ -15,6 +19,23 @@ import org.jspecify.annotations.NullMarked;
 public final class RegionEdits {
 
     private RegionEdits() {}
+
+    public static final String CONSOLE_FLAG_NODE = "uworldguard.region.flag.console";
+
+    /**
+     * Whether {@code sender} may set {@code flag} at all. The console-command flags run their value
+     * as the console, so the general flag node is not enough for them. Checked by the command and the
+     * menu, the two surfaces a player edits flags from.
+     */
+    public static boolean mayEditFlag(final CommandSender sender, final Flag<?> flag) {
+        if (flag != Flags.CONSOLE_COMMAND_ON_ENTRY && flag != Flags.CONSOLE_COMMAND_ON_EXIT
+            || sender.hasPermission(CONSOLE_FLAG_NODE)) {
+            return true;
+        }
+        sender.sendMessage(Messages.format("<red>Setting <aqua><flag></aqua> needs <white><node></white>.",
+            Placeholder.unparsed("flag", flag.getName()), Placeholder.unparsed("node", CONSOLE_FLAG_NODE)));
+        return false;
+    }
 
     /**
      * Fires {@code event} and tells its actor when it was refused. Returns true when the edit must

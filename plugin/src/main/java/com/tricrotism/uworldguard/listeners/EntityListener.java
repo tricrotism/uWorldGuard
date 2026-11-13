@@ -124,17 +124,22 @@ public final class EntityListener implements Listener {
             return;
         }
         final Entity entity = event.getEntity();
+        if (entity instanceof Projectile projectile) {
+            onProjectileChange(event, projectile);
+            return;
+        }
+        if (entity instanceof Player) {
+            return;
+        }
+        final Block block = event.getBlock();
         final StateFlag flag = griefFlag(entity);
-        if (flag == null) {
-            if (entity instanceof Projectile projectile) {
-                onProjectileChange(event, projectile);
-            }
+        final ApplicableRegionSet at = query.getApplicableRegions(block);
+        if (flag != null && query.usesFlag(block.getWorld(), flag) && !at.testState(flag)) {
+            event.setCancelled(true);
             return;
         }
-        if (!query.usesFlag(event.getBlock().getWorld(), flag)) {
-            return;
-        }
-        if (!query.testState(event.getBlock(), flag)) {
+        if (at.size() != 0 && !MachineListener.machineMayAct(
+            query.getApplicableRegions(entity), at, flag != null ? flag : Flags.BLOCK_BREAK)) {
             event.setCancelled(true);
         }
     }
@@ -618,7 +623,8 @@ public final class EntityListener implements Listener {
         final Hanging hanging = event.getEntity();
         final StateFlag flag = hanging instanceof ItemFrame
             ? Flags.ENTITY_ITEM_FRAME_DESTROY
-            : hanging instanceof Painting ? Flags.ENTITY_PAINTING_DESTROY : null;
+            : hanging instanceof Painting ? Flags.ENTITY_PAINTING_DESTROY
+            : hanging instanceof LeashHitch ? Flags.BUILD : null;
         if (flag == null) {
             return;
         }
@@ -674,10 +680,14 @@ public final class EntityListener implements Listener {
         }
     }
 
+    /**
+     * Spawns {@code mob-spawning} governs: mobs the world brings in, not ones a player places or
+     * breeds. A pearl's endermite counts, since nobody chose to spawn it.
+     */
     private static boolean isNaturalSpawn(final CreatureSpawnEvent.SpawnReason reason) {
         return switch (reason) {
             case NATURAL, SPAWNER, TRIAL_SPAWNER, REINFORCEMENTS, PATROL, RAID, JOCKEY, MOUNT,
-                 VILLAGE_INVASION, TRAP -> true;
+                 VILLAGE_INVASION, TRAP, ENDER_PEARL -> true;
             default -> false;
         };
     }

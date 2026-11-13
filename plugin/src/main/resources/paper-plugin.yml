@@ -89,6 +89,9 @@ permissions:
     uworldguard.region.flag:
         description: Set and clear region flags.
         default: op
+    uworldguard.region.flag.console:
+        description: Set the console-command-on-entry and console-command-on-exit flags, which run as the console.
+        default: op
     uworldguard.region.info:
         description: View a region's details.
         default: op

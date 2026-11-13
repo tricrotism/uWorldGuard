@@ -304,7 +304,9 @@ public final class RegionSerializer {
                 case '\t' -> out.append("\\t");
                 case '\r' -> out.append("\\r");
                 default -> {
-                    if (c < 0x20 || c == 0x7F || c == '\u0085' || c == ' ' || c == ' ' || c == '﻿') {
+                    if (Character.isHighSurrogate(c) && i + 1 < n && Character.isLowSurrogate(s.charAt(i + 1))) {
+                        out.append(c).append(s.charAt(++i));
+                    } else if (unprintable(c)) {
                         out.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
                     } else {
                         out.append(c);
@@ -313,6 +315,16 @@ public final class RegionSerializer {
             }
         }
         out.append('"');
+    }
+
+    /**
+     * Characters SnakeYAML refuses to read raw, which would fail the whole document on the next load:
+     * the C0 and C1 controls, the line and paragraph separators, the byte order mark, the two
+     * non-characters and a surrogate without its pair.
+     */
+    private static boolean unprintable(final char c) {
+        return c < 0x20 || c >= 0x7F && c <= 0x9F || c == 0x2028 || c == 0x2029 || c == 0xFEFF
+            || c >= 0xFFFE || Character.isSurrogate(c);
     }
 
     private static boolean plainSafe(final String s) {

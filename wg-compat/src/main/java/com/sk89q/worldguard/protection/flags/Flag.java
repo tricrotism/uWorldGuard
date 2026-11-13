@@ -30,7 +30,7 @@ public abstract class Flag<T> {
     private volatile Object uwgBinding;
 
     protected Flag(final String name) {
-        this(name, null);
+        this(name, RegionGroup.ALL);
     }
 
     protected Flag(final String name, final RegionGroup defaultGroup) {

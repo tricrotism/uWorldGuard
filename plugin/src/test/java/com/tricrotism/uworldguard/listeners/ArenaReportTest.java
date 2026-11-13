@@ -5,9 +5,7 @@ import com.tricrotism.uworldguard.config.Settings;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.flags.State;
 import com.tricrotism.uworldguard.region.*;
-import com.tricrotism.uworldguard.service.ChamberedPearlTracker;
-import com.tricrotism.uworldguard.service.CollisionService;
-import com.tricrotism.uworldguard.service.PendingRestores;
+import com.tricrotism.uworldguard.service.*;
 import com.tricrotism.uworldguard.storage.RegionStore;
 import com.tricrotism.uworldguard.text.ChatTags;
 import com.tricrotism.uworldguard.text.MessageService;
@@ -80,11 +78,13 @@ class ArenaReportTest {
         container.loadAll();
         final MessageService messages = new MessageService(plugin);
         final RegionQuery query = container.createQuery();
-        build = new BuildProtectionListener(query, messages);
+        build = new BuildProtectionListener(query, messages, true);
         workbench = new WorkbenchListener(container, query, messages);
         state = new PlayerStateListener(query, messages);
         movement = new MovementListener(plugin, query, messages, new CollisionService(plugin),
-            new ChamberedPearlTracker(plugin), new ChatTags(), new PendingRestores(plugin), new Settings());
+            new ChamberedPearlTracker(plugin), new ChatTags(), new PendingRestores(plugin),
+            new PlayerTickService(plugin, container, query, new ChunkUnloadService(plugin, container)),
+            new Settings());
     }
 
     @AfterEach

@@ -12,7 +12,6 @@ import com.tricrotism.uworldguard.region.RegionQuery;
 import com.tricrotism.uworldguard.text.DenyDebug;
 import com.tricrotism.uworldguard.text.MessageService;
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -37,6 +36,7 @@ import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.util.BoundingBox;
+import org.bukkit.util.Vector;
 import org.jspecify.annotations.NullMarked;
 
 import java.util.EnumSet;
@@ -51,16 +51,19 @@ import java.util.UUID;
 public final class BuildProtectionListener implements Listener {
 
     /**
-     * Blocks an entity triggers by touching them: every pressure plate, and tripwire.
+     * Blocks an entity triggers by touching them: every pressure plate and button, and tripwire.
      */
     private static final Set<Material> TRIGGERS = triggers();
+    private static final double GHOST_CLIMB_DROP = -0.5;
 
     private final RegionQuery query;
     private final MessageService messages;
+    private final boolean stopGhostClimb;
 
-    public BuildProtectionListener(final RegionQuery query, final MessageService messages) {
+    public BuildProtectionListener(final RegionQuery query, final MessageService messages, final boolean stopGhostClimb) {
         this.query = query;
         this.messages = messages;
+        this.stopGhostClimb = stopGhostClimb;
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -126,11 +129,19 @@ public final class BuildProtectionListener implements Listener {
 
     /**
      * The placer's client shows a refused block until the correction arrives, so a player who jumps
-     * and places under their own feet can climb on air. Dropping them to where it would have sat
-     * takes back the height, unless something real still holds them up.
+     * and places under their own feet can climb on air. Pushing them down takes back the height,
+     * unless something real still holds them up.
+     *
+     * <p>A velocity rather than a teleport. Each refused block used to teleport the player, so
+     * someone spamming placements was always freshly teleported, and anticheats and
+     * teleport-protection plugins on live servers then dropped the hits aimed at them. A velocity is
+     * a motion the client applies and anticheats model, and the block correction arriving with it
+     * removes what they were standing on.
+     *
+     * <p>Does nothing when {@code regions.stop-ghost-climb} is off.
      */
-    private static void stopGhostClimb(final Player player, final Block block) {
-        if (player.isFlying()) {
+    private void stopGhostClimb(final Player player, final Block block) {
+        if (!stopGhostClimb || player.isFlying()) {
             return;
         }
         final BoundingBox box = player.getBoundingBox();
@@ -151,9 +162,8 @@ public final class BuildProtectionListener implements Listener {
                 }
             }
         }
-        final Location to = player.getLocation();
-        to.setY(y);
-        player.teleportAsync(to);
+        final Vector velocity = player.getVelocity();
+        player.setVelocity(new Vector(velocity.getX(), GHOST_CLIMB_DROP, velocity.getZ()));
     }
 
     /**
@@ -328,6 +338,10 @@ public final class BuildProtectionListener implements Listener {
      * that uses nothing, such as placing a block on the floor or throwing a wind charge at it, is not
      * an interaction, so {@code block-place} alone decides placement. A refused click denies the
      * block's own use and leaves the held item usable, unless that item would change the block.
+     *
+     * <p>Both hands are judged, because the client tries the off hand once the main hand comes back
+     * unused, and glowstone, compost or a bucket held there would still reach the block. Only the
+     * main-hand attempt prints a reason.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onInteract(final PlayerInteractEvent event) {
@@ -335,7 +349,7 @@ public final class BuildProtectionListener implements Listener {
             return;
         }
         final Block block = event.getClickedBlock();
-        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || block == null || event.getHand() != EquipmentSlot.HAND) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || block == null) {
             return;
         }
         final Material item = event.getMaterial();
@@ -357,8 +371,34 @@ public final class BuildProtectionListener implements Listener {
             } else {
                 event.setUseInteractedBlock(Event.Result.DENY);
             }
-            messages.sendRegionDeny(player, Flags.INTERACT, set);
+            if (event.getHand() == EquipmentSlot.HAND) {
+                messages.sendRegionDeny(player, Flags.INTERACT, set);
+            }
         }
+    }
+
+    /**
+     * Punching a dragon egg teleports it, so a left click on one answers to {@code interact}/{@code use}
+     * like a right click does, as in WorldGuard.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onPunchEgg(final PlayerInteractEvent event) {
+        if (event.getAction() != Action.LEFT_CLICK_BLOCK) {
+            return;
+        }
+        final Block block = event.getClickedBlock();
+        if (block == null || block.getType() != Material.DRAGON_EGG || EventGate.disabled(event)
+            || InteractionWhitelist.allows(block.getWorld(), Material.DRAGON_EGG)) {
+            return;
+        }
+        final Player player = event.getPlayer();
+        final ApplicableRegionSet set = query.getApplicableRegions(block);
+        if (set.testBuild(player.getUniqueId(), Flags.INTERACT, Flags.USE) || Bypass.has(player)
+            || InteractFlags.explicitlyAllowed(set, player.getUniqueId(), block, Material.DRAGON_EGG)) {
+            return;
+        }
+        event.setUseInteractedBlock(Event.Result.DENY);
+        messages.sendRegionDeny(player, Flags.INTERACT, set);
     }
 
     /**
@@ -411,6 +451,14 @@ public final class BuildProtectionListener implements Listener {
                     event.setCancelled(true);
                 }
             }
+        } else if (entity instanceof Vehicle && !entity.isEmpty()) {
+            for (final Entity passenger : entity.getPassengers()) {
+                if (passenger instanceof Player rider && !mayTrigger(block, type, rider.getUniqueId())
+                    && !Bypass.has(rider)) {
+                    event.setCancelled(true);
+                    return;
+                }
+            }
         }
     }
 
@@ -422,7 +470,8 @@ public final class BuildProtectionListener implements Listener {
     private static Set<Material> triggers() {
         final Set<Material> triggers = EnumSet.of(Material.TRIPWIRE);
         for (final Material material : Material.values()) {
-            if (!material.isLegacy() && material.name().endsWith("_PRESSURE_PLATE")) {
+            if (!material.isLegacy() && (material.name().endsWith("_PRESSURE_PLATE")
+                || material.name().endsWith("_BUTTON"))) {
                 triggers.add(material);
             }
         }

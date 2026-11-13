@@ -26,6 +26,8 @@ import org.jspecify.annotations.Nullable;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiConsumer;
+import java.util.function.BooleanSupplier;
 
 /**
  * Applies the once-a-second player flags: heal-amount / heal-min-health / heal-max-health, and
@@ -40,10 +42,16 @@ import java.util.concurrent.atomic.AtomicLong;
  * {@link ApplicableRegionSet#worldUses}, except that a player still holding effects or a sky lock
  * this service applied keeps ticking that half until it is undone, so changing world or deleting the
  * last region using the flag cannot strand it.
+ *
+ * <p>In {@code movement.mode: TASK} the same task also runs the movement poll, so a player carries one
+ * repeating task whatever the configuration. Each second it also tells {@link ChunkUnloadService}
+ * which chunk the player is in.
  */
 @NullMarked
 public final class PlayerTickService implements Listener {
 
+    public static final String NOTIFY_PERMISSION = "uworldguard.notify";
+    private static final int TICKS_PER_SECOND = 20;
     private static final int REAPPLY_TICKS = 300;
     /**
      * Seconds between refreshes of an unchanged effect set. Comfortably inside {@link #REAPPLY_TICKS}
@@ -67,20 +75,74 @@ public final class PlayerTickService implements Listener {
      */
     private record SkyLock(@Nullable String time, @Nullable String weather) {}
 
+    /**
+     * The movement poll a player's task runs every {@code ticks} ticks, passing true on every
+     * {@code sweepEvery}th run.
+     */
+    public record Poll(BiConsumer<Player, Boolean> run, int ticks, int sweepEvery) {}
+
+    /**
+     * A player's task and its count of seconds that did work. The count outlives a restart, so a
+     * reload that retunes the poll does not push back the next heal, feed or effect refresh.
+     */
+    private record Tick(ScheduledTask task, AtomicLong seconds) {}
+
     private final Plugin plugin;
     private final RegionContainerImpl container;
     private final RegionQuery query;
+    private final ChunkUnloadService chunks;
     private final Map<UUID, Granted> granted = new ConcurrentHashMap<>();
     private final Map<UUID, SkyLock> skyLocks = new ConcurrentHashMap<>();
-    private final Map<UUID, ScheduledTask> tasks = new ConcurrentHashMap<>();
+    private final Map<UUID, Tick> tasks = new ConcurrentHashMap<>();
 
-    public PlayerTickService(final Plugin plugin, final RegionContainerImpl container, final RegionQuery query) {
+    /**
+     * Online holders of {@code permission}, re-tested each second while {@code active} says the
+     * permission can matter.
+     */
+    private record Watch(String permission, BooleanSupplier active, Set<UUID> holders) {}
+
+    private volatile Watch[] watches = new Watch[0];
+    private final Set<UUID> regionStaff;
+    private volatile @Nullable Poll poll;
+
+    public PlayerTickService(
+        final Plugin plugin,
+        final RegionContainerImpl container,
+        final RegionQuery query,
+        final ChunkUnloadService chunks
+    ) {
         this.plugin = plugin;
         this.container = container;
         this.query = query;
+        this.chunks = chunks;
+        this.regionStaff = watch(NOTIFY_PERMISSION,
+            () -> container.anyRegionUses(Flags.NOTIFY_ENTER) || container.anyRegionUses(Flags.NOTIFY_LEAVE));
     }
 
-    public void start() {
+    /**
+     * Tracks which online players hold {@code permission}, so a broadcast to them hops to those
+     * players instead of to everyone online. Each player is re-tested on their own tick once a second
+     * and at join, only while {@code active} returns true. Register before players' ticks start.
+     *
+     * @return a read-only live view of the holders, at most a second old, safe to iterate anywhere
+     */
+    public Set<UUID> watch(final String permission, final BooleanSupplier active) {
+        final Set<UUID> holders = ConcurrentHashMap.newKeySet();
+        final Watch[] current = watches;
+        final Watch[] grown = Arrays.copyOf(current, current.length + 1);
+        grown[current.length] = new Watch(permission, active, holders);
+        watches = grown;
+        return Collections.unmodifiableSet(holders);
+    }
+
+    /**
+     * (Re)starts every online player's task, carrying {@code poll} when it is not null. Players who
+     * join later pick up the same poll.
+     *
+     * @param poll the movement poll, or null when movement is event driven
+     */
+    public void start(final @Nullable Poll poll) {
+        this.poll = poll;
         for (final Player player : plugin.getServer().getOnlinePlayers()) {
             startTick(player);
         }
@@ -93,35 +155,91 @@ public final class PlayerTickService implements Listener {
      * scheduled one entity task per player per second: that shape allocated and queued a task object
      * for every player every second, through the one thread the whole server shares, to do work that
      * only ever touches one player.
+     *
+     * <p>With a poll, the task runs every gcd(poll interval, 20) ticks, so the poll and the per-second
+     * work each land on exactly the tick they would with tasks of their own. The replaced task is
+     * cancelled only after the new handle is stored, so two overlapping starts cannot orphan one.
      */
     private void startTick(final Player player) {
         final UUID uuid = player.getUniqueId();
-        stopTick(uuid);
-        final AtomicLong seconds = new AtomicLong();
+        final Poll moves = this.poll;
+        final long period = moves == null ? TICKS_PER_SECOND : gcd(moves.ticks(), TICKS_PER_SECOND);
+        final AtomicLong elapsed = new AtomicLong();
+        final Tick current = tasks.get(uuid);
+        final AtomicLong seconds = current == null ? new AtomicLong() : current.seconds();
         final ScheduledTask scheduled = player.getScheduler().runAtFixedRate(plugin, _ -> {
-            final boolean sessions = SessionDispatch.ACTIVE;
-            if (!sessions
-                && !container.anyRegionUses(Flags.HEAL_AMOUNT)
-                && !container.anyRegionUses(Flags.FEED_AMOUNT)
-                && !container.anyRegionUses(Flags.TIME_LOCK)
-                && !container.anyRegionUses(Flags.WEATHER_LOCK)
-                && !container.anyRegionUses(Flags.GIVE_EFFECTS)
-                && !container.anyRegionUses(Flags.BLOCKED_EFFECTS)
-                && !skyLocks.containsKey(uuid)
-                && !granted.containsKey(uuid)) {
-                return;
+            final long now = elapsed.addAndGet(period);
+            if (moves != null && now % moves.ticks() == 0L) {
+                moves.run().accept(player, (now / moves.ticks()) % moves.sweepEvery() == 0L);
             }
-            apply(player, seconds.incrementAndGet(), sessions);
-        }, null, 20L, 20L);
+            if (now % TICKS_PER_SECOND == 0L) {
+                second(player, uuid, seconds);
+            }
+        }, null, period, period);
         if (scheduled != null) {
-            tasks.put(uuid, scheduled);
+            final Tick replaced = tasks.put(uuid, new Tick(scheduled, seconds));
+            if (replaced != null) {
+                replaced.task().cancel();
+            }
         }
     }
 
+    /**
+     * The online players last seen holding {@link #NOTIFY_PERMISSION}, kept while some region uses
+     * {@code notify-enter} or {@code notify-leave}.
+     *
+     * @return a read-only live view, at most a second old, safe to iterate from any thread
+     */
+    public Set<UUID> notifyStaff() {
+        return regionStaff;
+    }
+
+    private void noteStaff(final Player player, final UUID uuid) {
+        for (final Watch watch : watches) {
+            if (!watch.active().getAsBoolean()) {
+                continue;
+            }
+            if (player.hasPermission(watch.permission())) {
+                watch.holders().add(uuid);
+            } else {
+                watch.holders().remove(uuid);
+            }
+        }
+    }
+
+    private void second(final Player player, final UUID uuid, final AtomicLong seconds) {
+        chunks.visit(player);
+        noteStaff(player, uuid);
+        final boolean sessions = SessionDispatch.ACTIVE;
+        if (!sessions
+            && !container.anyRegionUses(Flags.HEAL_AMOUNT)
+            && !container.anyRegionUses(Flags.FEED_AMOUNT)
+            && !container.anyRegionUses(Flags.TIME_LOCK)
+            && !container.anyRegionUses(Flags.WEATHER_LOCK)
+            && !container.anyRegionUses(Flags.GIVE_EFFECTS)
+            && !container.anyRegionUses(Flags.BLOCKED_EFFECTS)
+            && !skyLocks.containsKey(uuid)
+            && !granted.containsKey(uuid)) {
+            return;
+        }
+        apply(player, seconds.incrementAndGet(), sessions);
+    }
+
+    static int gcd(final int a, final int b) {
+        int x = a;
+        int y = b;
+        while (y != 0) {
+            final int r = x % y;
+            x = y;
+            y = r;
+        }
+        return x;
+    }
+
     private void stopTick(final UUID uuid) {
-        final ScheduledTask existing = tasks.remove(uuid);
+        final Tick existing = tasks.remove(uuid);
         if (existing != null) {
-            existing.cancel();
+            existing.task().cancel();
         }
     }
 
@@ -131,17 +249,29 @@ public final class PlayerTickService implements Listener {
      * which hold theirs so a reload can retune them.
      */
     public void stop() {
-        for (final ScheduledTask running : tasks.values()) {
-            running.cancel();
+        for (final Tick running : tasks.values()) {
+            running.task().cancel();
         }
         tasks.clear();
         granted.clear();
+        for (final UUID locked : skyLocks.keySet()) {
+            final Player player = plugin.getServer().getPlayer(locked);
+            if (player != null && plugin.getServer().isOwnedByCurrentRegion(player)) {
+                player.resetPlayerTime();
+                player.resetPlayerWeather();
+            }
+        }
         skyLocks.clear();
+        for (final Watch watch : watches) {
+            watch.holders().clear();
+        }
     }
 
     @EventHandler
     public void onJoin(final PlayerJoinEvent event) {
-        startTick(event.getPlayer());
+        final Player player = event.getPlayer();
+        startTick(player);
+        noteStaff(player, player.getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -150,6 +280,9 @@ public final class PlayerTickService implements Listener {
         stopTick(uuid);
         granted.remove(uuid);
         skyLocks.remove(uuid);
+        for (final Watch watch : watches) {
+            watch.holders().remove(uuid);
+        }
     }
 
     /**

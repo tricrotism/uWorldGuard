@@ -877,6 +877,9 @@ public final class RegionCommands {
             error(sender, "Unknown flag <aqua><flag></aqua>.", Placeholder.unparsed("flag", flagName));
             return;
         }
+        if (!RegionEdits.mayEditFlag(sender.source(), flag)) {
+            return;
+        }
 
         RegionGroup group = null;
         if (groupName != null) {
@@ -1290,6 +1293,13 @@ public final class RegionCommands {
             final EditResult result = add
                 ? editor.addPlayer(region, role, uuid, sender.source())
                 : editor.removePlayer(region, role, uuid, sender.source());
+            if (result == EditResult.UNCHANGED && !add) {
+                error(sender, "<aqua><player></aqua> is not one of the " + (owner ? "owners" : "members")
+                        + " of <aqua><id></aqua>.",
+                    Placeholder.unparsed("player", playerName),
+                    Placeholder.unparsed("id", id));
+                return;
+            }
             switch (result) {
                 case APPLIED, UNCHANGED -> success(sender, (add ? "Added " : "Removed ") + "<aqua><player></aqua> "
                         + (add ? "to" : "from") + " " + (owner ? "owners" : "members")

@@ -74,7 +74,10 @@ class TrampleProtectionTest {
     }
 
     private boolean playerSteps(final Material type, final int x, final int z) {
-        final PlayerMock walker = server.addPlayer();
+        return steps(server.addPlayer(), type, x, z);
+    }
+
+    private boolean steps(final PlayerMock walker, final Material type, final int x, final int z) {
         final PlayerInteractEvent event = new PlayerInteractEvent(
             walker, Action.PHYSICAL, null, stepOn(type, x, z), BlockFace.UP, EquipmentSlot.HAND);
         listener.onPlayerTrample(event);
@@ -89,10 +92,21 @@ class TrampleProtectionTest {
     }
 
     @Test
-    void eggsBreakWhereNobodySetTheFlag() {
-        claim("plot");
+    void membershipDecidesWhereNobodySetTheFlag() {
+        final ProtectedCuboidRegion plot = claim("plot");
+        final PlayerMock member = server.addPlayer();
+        plot.getMembers().addPlayer(member.getUniqueId());
 
-        assertTrue(playerSteps(Material.TURTLE_EGG, 16, 16));
+        assertFalse(playerSteps(Material.TURTLE_EGG, 16, 16), "a stranger's trample is a block break");
+        assertTrue(steps(member, Material.TURTLE_EGG, 16, 16));
+        assertTrue(playerSteps(Material.TURTLE_EGG, 500, 500), "wilderness is unaffected");
+    }
+
+    @Test
+    void anExplicitAllowLetsAnyoneTrample() {
+        claim("plot").setFlag(Flags.CROP_TRAMPLE, State.ALLOW);
+
+        assertTrue(playerSteps(Material.FARMLAND, 16, 16));
     }
 
     @Test
@@ -113,16 +127,22 @@ class TrampleProtectionTest {
 
     @Test
     void denyingCropTrampleLeavesEggsAlone() {
-        claim("plot").setFlag(Flags.CROP_TRAMPLE, State.DENY);
+        final ProtectedCuboidRegion plot = claim("plot");
+        plot.setFlag(Flags.CROP_TRAMPLE, State.DENY);
+        final PlayerMock member = server.addPlayer();
+        plot.getMembers().addPlayer(member.getUniqueId());
 
-        assertFalse(playerSteps(Material.FARMLAND, 16, 16), "farmland is what was denied");
-        assertTrue(playerSteps(Material.TURTLE_EGG, 16, 17), "eggs have their own flag");
+        assertFalse(steps(member, Material.FARMLAND, 16, 16), "farmland is what was denied");
+        assertTrue(steps(member, Material.TURTLE_EGG, 16, 17), "eggs have their own flag");
     }
 
     @Test
     void denyingEggTrampleLeavesFarmlandAlone() {
-        claim("plot").setFlag(Flags.EGG_TRAMPLE, State.DENY);
+        final ProtectedCuboidRegion plot = claim("plot");
+        plot.setFlag(Flags.EGG_TRAMPLE, State.DENY);
+        final PlayerMock member = server.addPlayer();
+        plot.getMembers().addPlayer(member.getUniqueId());
 
-        assertTrue(playerSteps(Material.FARMLAND, 16, 16));
+        assertTrue(steps(member, Material.FARMLAND, 16, 16));
     }
 }

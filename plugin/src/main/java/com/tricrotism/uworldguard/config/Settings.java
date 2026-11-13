@@ -40,11 +40,14 @@ public final class Settings {
     private boolean updateCheck = true;
     private boolean verboseLogging = false;
     private boolean membershipGrantsTrust = true;
+    private boolean safezoneIsolation = true;
+    private boolean stopGhostClimb = true;
 
     private boolean sqlEnabled = false;
     private String sqlUrl = "jdbc:sqlite:plugins/uWorldGuard/regions.db";
     private String sqlUser = "";
     private String sqlPassword = "";
+    private int sqlConnectTimeoutSeconds = 10;
 
     public void load(final FileConfiguration config) {
         storageType = config.getString("storage.type", storageType);
@@ -72,11 +75,15 @@ public final class Settings {
 
         membershipGrantsTrust = config.getBoolean("regions.membership-grants-trust", membershipGrantsTrust);
         Membership.set(membershipGrantsTrust);
+        safezoneIsolation = config.getBoolean("regions.safezone-isolation", safezoneIsolation);
+        stopGhostClimb = config.getBoolean("regions.stop-ghost-climb", stopGhostClimb);
 
         sqlEnabled = config.getBoolean("storage.sql.enabled", sqlEnabled);
         sqlUrl = config.getString("storage.sql.url", sqlUrl);
         sqlUser = config.getString("storage.sql.user", sqlUser);
         sqlPassword = config.getString("storage.sql.password", sqlPassword);
+        sqlConnectTimeoutSeconds = Math.max(0,
+            config.getInt("storage.sql.connect-timeout-seconds", sqlConnectTimeoutSeconds));
     }
 
     public boolean verboseLogging() {
@@ -85,6 +92,14 @@ public final class Settings {
 
     public boolean membershipGrantsTrust() {
         return membershipGrantsTrust;
+    }
+
+    public boolean safezoneIsolation() {
+        return safezoneIsolation;
+    }
+
+    public boolean stopGhostClimb() {
+        return stopGhostClimb;
     }
 
     public boolean updateCheck() {
@@ -137,5 +152,9 @@ public final class Settings {
 
     public String sqlPassword() {
         return sqlPassword;
+    }
+
+    public int sqlConnectTimeoutSeconds() {
+        return sqlConnectTimeoutSeconds;
     }
 }

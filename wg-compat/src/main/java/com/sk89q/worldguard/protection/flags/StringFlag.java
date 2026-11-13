@@ -36,7 +36,7 @@ public class StringFlag extends Flag<String> {
 
     @Override
     public String parseInput(final FlagContext context) throws InvalidFlagFormat {
-        return context.getUserInput();
+        return com.tricrotism.uworldguard.flags.StringFlag.unescape(context.getUserInput());
     }
 
     @Override

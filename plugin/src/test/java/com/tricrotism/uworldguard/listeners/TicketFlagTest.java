@@ -90,7 +90,7 @@ class TicketFlagTest {
         container.loadAll();
         final MessageService messages = new MessageService(plugin);
         final RegionQuery query = container.createQuery();
-        build = new BuildProtectionListener(query, messages);
+        build = new BuildProtectionListener(query, messages, true);
         items = new ItemUseListener(container, query, messages);
         workbenches = new WorkbenchListener(container, query, messages);
         containers = new PlayerStateListener(query, messages);
@@ -262,8 +262,8 @@ class TicketFlagTest {
 
         placeUnder(climber, 64);
 
-        assertNotNull(teleportedTo, "standing on the refused block would let them climb on air");
-        assertEquals(64.0, teleportedTo.getY());
+        assertTrue(climber.getVelocity().getY() < 0, "standing on the refused block would let them climb on air");
+        assertNull(teleportedTo, "a teleport per refused block left glitchers always freshly teleported");
     }
 
     @Test
@@ -275,6 +275,7 @@ class TicketFlagTest {
         placeUnder(bridger, 64);
 
         assertNull(teleportedTo);
+        assertEquals(0.0, bridger.getVelocity().getY());
     }
 
     @Test

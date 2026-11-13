@@ -8,7 +8,9 @@ import com.tricrotism.uworldguard.region.RegionManager;
 import com.tricrotism.uworldguard.region.RegionType;
 import com.tricrotism.uworldguard.util.BlockVector3;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
@@ -20,18 +22,27 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Enforces the chunk-unload flag by keeping the chunks of any region with chunk-unload=DENY loaded
- * via plugin chunk tickets. Paper scopes these tickets to this plugin and drops them automatically
- * on disable, so no shutdown cleanup is needed and other plugins' tickets are never disturbed.
+ * Enforces the chunk-unload flag: a chunk of a chunk-unload=DENY region that a player has stood in
+ * keeps a plugin chunk ticket, so it stays loaded after they leave. Paper scopes these tickets to this
+ * plugin and drops them on disable, so no shutdown cleanup is needed and other plugins' tickets are
+ * never disturbed.
  *
- * <p>A slow global task reconciles the desired ticket set every few seconds, so flag changes, region
+ * <p>Deny never loads a chunk, as with WorldGuard 6, which cancelled the unload event. Two shapes
+ * that went further were wrong. Ticketing every covered chunk at startup made Paper load each one
+ * synchronously inside {@code addPluginChunkTicket}, freezing the server for seconds on a large spawn
+ * and keeping all of it entity ticking with nobody online. Ticketing covered chunks as they loaded
+ * flooded the region instead: a ticketed chunk is entity ticking, Paper loads the two rings around
+ * it, those load events ticketed them in turn, and the first visit loaded the whole region. Players
+ * are sampled once a second from {@link PlayerTickService}, so only chunks someone stood in are held,
+ * and a player moving faster than a chunk a second can skip one.
+ *
+ * <p>A slow global task reconciles the covered set every few seconds, so flag changes, region
  * edits, and world loads are all picked up without per-edit hooks; the steady state issues no work.
- * The reconcile is skipped when no region uses the flag and nothing is currently ticketed, and so is
- * each world on its own terms: the signature walks every region in a world, so without the per-world
- * test one region setting the flag in one world cost a full walk of every other world every period,
- * on the global thread. Tickets
- * are added/removed on the owning chunk's region thread for Folia safety, and a per-region chunk-span
- * cap stops one oversized region from pinning an unbounded number of chunks.
+ * The reconcile is skipped when no region uses the flag and nothing is covered, and so is each world
+ * on its own terms: the signature walks every region in a world, so without the per-world test one
+ * region setting the flag in one world cost a full walk of every other world every period, on the
+ * global thread. A chunk no region covers any more loses its ticket on its own region thread, and a
+ * per-region chunk-span cap stops one oversized region from pinning an unbounded number of chunks.
  */
 @NullMarked
 public final class ChunkUnloadService {
@@ -41,13 +52,9 @@ public final class ChunkUnloadService {
 
     private final Plugin plugin;
     private final RegionContainerImpl container;
-    private final Map<UUID, Set<Long>> ticketed = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<Long>> wanted = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<Long>> held = new ConcurrentHashMap<>();
     private final Map<UUID, Long> signatures = new ConcurrentHashMap<>();
-    /**
-     * Regions already reported as too large to enforce, keyed {@code <world uid>:<region id>} so the
-     * entries can go when their world does — an id alone would outlive every world that used it, and
-     * would also silence the warning for a same-named region in another world.
-     */
     private final Set<String> warned = ConcurrentHashMap.newKeySet();
     private volatile @Nullable ScheduledTask task;
 
@@ -76,19 +83,59 @@ public final class ChunkUnloadService {
 
     /**
      * Forgets a world's ticket bookkeeping when it unloads. The server drops the real tickets with
-     * the world, but {@code ticketed} would go on claiming they exist and {@code signatures} would go
+     * the world, but {@code held} would go on claiming they exist and {@code signatures} would go
      * on matching — so if that world were loaded again the reconcile would decide there was nothing
      * to do and chunk-unload would quietly stop being enforced there for the rest of the session.
      */
     public void forget(final World world) {
         final UUID uid = world.getUID();
-        ticketed.remove(uid);
+        wanted.remove(uid);
+        held.remove(uid);
         signatures.remove(uid);
         warned.removeIf(key -> key.startsWith(uid + ":"));
     }
 
+    /**
+     * Tickets the chunk {@code player} stands in if a deny region covers it. Runs on the player's own
+     * thread, which owns that chunk, and the chunk is loaded because they are in it.
+     *
+     * <p>The reconcile publishes a new covered set before it scans {@code held}, so re-reading it
+     * after the add catches a chunk the scan already passed. Either side removes through
+     * {@code holding.remove}, so the ticket is dropped once.
+     */
+    public void visit(final Player player) {
+        if (wanted.isEmpty()) {
+            return;
+        }
+        final World world = player.getWorld();
+        final UUID uid = world.getUID();
+        final Set<Long> chunks = wanted.get(uid);
+        if (chunks == null) {
+            return;
+        }
+        final int cx = Location.locToBlock(player.getX()) >> 4;
+        final int cz = Location.locToBlock(player.getZ()) >> 4;
+        final long key = key(cx, cz);
+        if (!chunks.contains(key)) {
+            return;
+        }
+        final Set<Long> holding = held.computeIfAbsent(uid, _ -> ConcurrentHashMap.newKeySet());
+        if (!holding.add(key)) {
+            return;
+        }
+        world.addPluginChunkTicket(cx, cz, plugin);
+        final Set<Long> now = wanted.get(uid);
+        if (now != chunks && (now == null || !now.contains(key)) && holding.remove(key)) {
+            world.removePluginChunkTicket(cx, cz, plugin);
+        }
+    }
+
+    private static long key(final int cx, final int cz) {
+        return (((long) cx) << 32) | (cz & 0xffffffffL);
+    }
+
     private void reconcile() {
-        if (!container.anyRegionUses(Flags.CHUNK_UNLOAD) && ticketed.isEmpty()) {
+        if (!container.anyRegionUses(Flags.CHUNK_UNLOAD) && wanted.isEmpty()) {
             return;
         }
         for (final World world : plugin.getServer().getWorlds()) {
@@ -97,7 +144,7 @@ public final class ChunkUnloadService {
                 continue;
             }
             final UUID uid = world.getUID();
-            if (!manager.anyRegionUses(Flags.CHUNK_UNLOAD) && !ticketed.containsKey(uid)) {
+            if (!manager.anyRegionUses(Flags.CHUNK_UNLOAD) && !wanted.containsKey(uid)) {
                 continue;
             }
             final long signature = signatureOf(manager);
@@ -107,22 +154,18 @@ public final class ChunkUnloadService {
             }
 
             final Set<Long> desired = desiredChunks(uid, manager);
-            final Set<Long> current = ticketed.getOrDefault(uid, Set.of());
-
-            for (final long key : desired) {
-                if (!current.contains(key)) {
-                    setTicket(world, key, true);
-                }
-            }
-            for (final long key : current) {
-                if (!desired.contains(key)) {
-                    setTicket(world, key, false);
-                }
-            }
             if (desired.isEmpty()) {
-                ticketed.remove(uid);
+                wanted.remove(uid);
             } else {
-                ticketed.put(uid, desired);
+                wanted.put(uid, desired);
+            }
+            final Set<Long> holding = held.get(uid);
+            if (holding != null) {
+                for (final Long key : holding) {
+                    if (!desired.contains(key) && holding.remove(key)) {
+                        release(world, key);
+                    }
+                }
             }
             signatures.put(uid, signature);
         }
@@ -173,22 +216,17 @@ public final class ChunkUnloadService {
             }
             for (int cx = cxMin; cx <= cxMax; cx++) {
                 for (int cz = czMin; cz <= czMax; cz++) {
-                    chunks.add((((long) cx) << 32) | (cz & 0xffffffffL));
+                    chunks.add(key(cx, cz));
                 }
             }
         }
         return chunks;
     }
 
-    private void setTicket(final World world, final long key, final boolean add) {
+    private void release(final World world, final long key) {
         final int cx = (int) (key >> 32);
         final int cz = (int) key;
-        plugin.getServer().getRegionScheduler().execute(plugin, world, cx, cz, () -> {
-            if (add) {
-                world.addPluginChunkTicket(cx, cz, plugin);
-            } else {
-                world.removePluginChunkTicket(cx, cz, plugin);
-            }
-        });
+        plugin.getServer().getRegionScheduler().execute(plugin, world, cx, cz,
+            () -> world.removePluginChunkTicket(cx, cz, plugin));
     }
 }
