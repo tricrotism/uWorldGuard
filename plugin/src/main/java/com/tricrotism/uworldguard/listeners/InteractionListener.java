@@ -243,7 +243,7 @@ public final class InteractionListener implements Listener {
     ) {
         final ApplicableRegionSet set = query.getApplicableRegions(target);
         if (set.testBuild(player.getUniqueId(), flag) || Bypass.has(player)
-            || set.flagSetContains(Flags.ALLOW_INTERACT, target.getType())) {
+            || set.flagSetContains(Flags.ALLOW_INTERACT, target.getType(), player.getUniqueId())) {
             return;
         }
         event.setCancelled(true);

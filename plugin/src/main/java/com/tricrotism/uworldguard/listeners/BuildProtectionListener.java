@@ -76,7 +76,7 @@ public final class BuildProtectionListener implements Listener {
         final ApplicableRegionSet set = query.getApplicableRegions(block);
         final Material type = set.worldUses(Flags.DENY_BLOCK_BREAK) || set.worldUses(Flags.ALLOW_BLOCK_BREAK)
             ? block.getType() : Material.AIR;
-        if (set.flagSetContains(Flags.DENY_BLOCK_BREAK, type)) {
+        if (set.flagSetContains(Flags.DENY_BLOCK_BREAK, type, player.getUniqueId())) {
             if (Bypass.has(player)) {
                 return;
             }
@@ -84,7 +84,7 @@ public final class BuildProtectionListener implements Listener {
             messages.sendRegionDeny(player, Flags.BLOCK_BREAK, set);
             return;
         }
-        if (set.flagSetContains(Flags.ALLOW_BLOCK_BREAK, type)) {
+        if (set.flagSetContains(Flags.ALLOW_BLOCK_BREAK, type, player.getUniqueId())) {
             return;
         }
         if (!set.testBuild(player.getUniqueId(), Flags.BLOCK_BREAK)) {
@@ -170,8 +170,8 @@ public final class BuildProtectionListener implements Listener {
      * Whether placing {@code type} here is refused, telling the player when it is.
      */
     private boolean placeRefused(final ApplicableRegionSet set, final Player player, final Material type) {
-        final boolean refused = set.flagSetContains(Flags.DENY_BLOCK_PLACE, type)
-            || (!set.flagSetContains(Flags.ALLOW_BLOCK_PLACE, type)
+        final boolean refused = set.flagSetContains(Flags.DENY_BLOCK_PLACE, type, player.getUniqueId())
+            || (!set.flagSetContains(Flags.ALLOW_BLOCK_PLACE, type, player.getUniqueId())
             && !set.testBuild(player.getUniqueId(), Flags.BLOCK_PLACE));
         if (!refused || Bypass.has(player)) {
             return false;
@@ -235,8 +235,8 @@ public final class BuildProtectionListener implements Listener {
         if (explicit == State.ALLOW) {
             return;
         }
-        if (explicit == null && !set.flagSetContains(denied, material)) {
-            if (set.flagSetContains(allowed, material)) {
+        if (explicit == null && !set.flagSetContains(denied, material, player.getUniqueId())) {
+            if (set.flagSetContains(allowed, material, player.getUniqueId())) {
                 return;
             }
             if (set.testBuild(player.getUniqueId(), flag)) {

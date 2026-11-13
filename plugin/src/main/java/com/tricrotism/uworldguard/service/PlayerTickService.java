@@ -308,18 +308,18 @@ public final class PlayerTickService implements Listener {
             return;
         }
         final ApplicableRegionSet regions = query.getApplicableRegions(player);
-        if (regions.worldUses(Flags.HEAL_AMOUNT) && due(tick, regions.queryValue(Flags.HEAL_DELAY))) {
+        if (regions.worldUses(Flags.HEAL_AMOUNT) && due(tick, regions.queryValue(Flags.HEAL_DELAY, id))) {
             heal(player, regions);
         }
-        if (regions.worldUses(Flags.FEED_AMOUNT) && due(tick, regions.queryValue(Flags.FEED_DELAY))) {
+        if (regions.worldUses(Flags.FEED_AMOUNT) && due(tick, regions.queryValue(Flags.FEED_DELAY, id))) {
             feed(player, regions);
         }
         if (regions.worldUses(Flags.TIME_LOCK) || regions.worldUses(Flags.WEATHER_LOCK)
-            || skyLocks.containsKey(player.getUniqueId())) {
+            || skyLocks.containsKey(id)) {
             lockSky(player, regions);
         }
         if (regions.worldUses(Flags.GIVE_EFFECTS) || regions.worldUses(Flags.BLOCKED_EFFECTS)
-            || granted.containsKey(player.getUniqueId())) {
+            || granted.containsKey(id)) {
             effects(player, regions, tick);
         }
     }
@@ -341,8 +341,8 @@ public final class PlayerTickService implements Listener {
      */
     private void lockSky(final Player player, final ApplicableRegionSet regions) {
         final UUID id = player.getUniqueId();
-        final String time = regions.queryValue(Flags.TIME_LOCK);
-        final String weather = regions.queryValue(Flags.WEATHER_LOCK);
+        final String time = regions.queryValue(Flags.TIME_LOCK, id);
+        final String weather = regions.queryValue(Flags.WEATHER_LOCK, id);
         final SkyLock applied = skyLocks.get(id);
         final boolean timeChanged = !Objects.equals(applied == null ? null : applied.time(), time);
         final boolean weatherChanged = !Objects.equals(applied == null ? null : applied.weather(), weather);
@@ -405,12 +405,13 @@ public final class PlayerTickService implements Listener {
      * The feeding counterpart to {@link #heal}: same clamping, against the 0–20 food scale.
      */
     private void feed(final Player player, final ApplicableRegionSet regions) {
-        final Integer amount = regions.queryValue(Flags.FEED_AMOUNT);
+        final UUID id = player.getUniqueId();
+        final Integer amount = regions.queryValue(Flags.FEED_AMOUNT, id);
         if (amount == null || amount == 0) {
             return;
         }
-        final int min = Math.max(0, orDefault(regions.queryValue(Flags.MIN_FOOD), 0));
-        final int max = Math.min(20, orDefault(regions.queryValue(Flags.MAX_FOOD), 20));
+        final int min = Math.max(0, orDefault(regions.queryValue(Flags.MIN_FOOD, id), 0));
+        final int max = Math.min(20, orDefault(regions.queryValue(Flags.MAX_FOOD, id), 20));
         final int food = player.getFoodLevel();
         if (amount > 0 && food >= max) {
             return;
@@ -429,7 +430,8 @@ public final class PlayerTickService implements Listener {
     }
 
     private void heal(final Player player, final ApplicableRegionSet regions) {
-        final Double amount = regions.queryValue(Flags.HEAL_AMOUNT);
+        final UUID id = player.getUniqueId();
+        final Double amount = regions.queryValue(Flags.HEAL_AMOUNT, id);
         if (amount == null || amount == 0.0) {
             return;
         }
@@ -438,8 +440,8 @@ public final class PlayerTickService implements Listener {
             return;
         }
         final double maxHealth = maxHealthAttribute.getValue();
-        final double min = orDefault(regions.queryValue(Flags.HEAL_MIN_HEALTH), 0.0);
-        final double max = Math.min(maxHealth, orDefault(regions.queryValue(Flags.HEAL_MAX_HEALTH), maxHealth));
+        final double min = orDefault(regions.queryValue(Flags.HEAL_MIN_HEALTH, id), 0.0);
+        final double max = Math.min(maxHealth, orDefault(regions.queryValue(Flags.HEAL_MAX_HEALTH, id), maxHealth));
         final double health = player.getHealth();
 
         if (amount > 0 && health >= max) {
@@ -468,7 +470,7 @@ public final class PlayerTickService implements Listener {
      */
     private void effects(final Player player, final ApplicableRegionSet regions, final long tick) {
         final UUID id = player.getUniqueId();
-        final Set<PotionEffect> give = regions.queryValue(Flags.GIVE_EFFECTS);
+        final Set<PotionEffect> give = regions.queryValue(Flags.GIVE_EFFECTS, id);
         final Granted previous = granted.get(id);
         if (give == null || give.isEmpty()) {
             if (previous != null) {
@@ -503,7 +505,7 @@ public final class PlayerTickService implements Listener {
             granted.put(id, new Granted(give, current, applied));
         }
 
-        final Set<PotionEffect> blocked = regions.queryValue(Flags.BLOCKED_EFFECTS);
+        final Set<PotionEffect> blocked = regions.queryValue(Flags.BLOCKED_EFFECTS, id);
         if (blocked != null && !Bypass.has(player)) {
             for (final PotionEffect effect : blocked) {
                 if (player.hasPotionEffect(effect.getType())) {

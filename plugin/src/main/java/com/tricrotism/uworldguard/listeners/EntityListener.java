@@ -362,7 +362,11 @@ public final class EntityListener implements Listener {
         if (at == null) {
             at = query.getApplicableRegions(victim);
         }
-        if (!at.flagSetContains(Flags.ALLOW_ENTITY_DAMAGE, victim.getType()) && !mayHarm(damager, at, flag)) {
+        final Player attacker = Attackers.of(damager);
+        final boolean allowedType = attacker != null
+            ? at.flagSetContains(Flags.ALLOW_ENTITY_DAMAGE, victim.getType(), attacker.getUniqueId())
+            : at.flagSetContains(Flags.ALLOW_ENTITY_DAMAGE, victim.getType());
+        if (!allowedType && !mayHarm(damager, at, flag)) {
             event.setCancelled(true);
         }
     }

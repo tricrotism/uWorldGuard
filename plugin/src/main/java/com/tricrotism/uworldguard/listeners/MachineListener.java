@@ -271,7 +271,7 @@ public final class MachineListener implements Listener {
             return;
         }
         if (set.testBuild(player.getUniqueId(), Flags.VAULT_USE) || Bypass.has(player)
-            || set.flagSetContains(Flags.ALLOW_INTERACT, Material.VAULT)) {
+            || set.flagSetContains(Flags.ALLOW_INTERACT, Material.VAULT, player.getUniqueId())) {
             return;
         }
         event.setCancelled(true);

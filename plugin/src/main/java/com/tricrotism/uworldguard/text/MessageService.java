@@ -283,7 +283,7 @@ public final class MessageService {
     public void sendRegionDeny(final Player player, final Flag<?> flag, final ApplicableRegionSet set) {
         if (!coolingDown(player.getUniqueId(), denyKey(flag))) {
             DenyDebug.explain(player, flag, set);
-            sendDeny(player, flag, set.queryValue(Flags.DENY_MESSAGE));
+            sendDeny(player, flag, set.queryValue(Flags.DENY_MESSAGE, player.getUniqueId()));
         }
     }
 

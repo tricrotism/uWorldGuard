@@ -7,6 +7,8 @@ import com.tricrotism.uworldguard.event.RegionEnterEvent;
 import com.tricrotism.uworldguard.event.RegionExitEvent;
 import com.tricrotism.uworldguard.flags.BooleanFlag;
 import com.tricrotism.uworldguard.flags.Flags;
+import com.tricrotism.uworldguard.flags.Flag;
+import com.tricrotism.uworldguard.flags.RegionGroup;
 import com.tricrotism.uworldguard.flags.State;
 import com.tricrotism.uworldguard.region.ApplicableRegionSet;
 import com.tricrotism.uworldguard.region.ProtectedRegion;
@@ -467,7 +469,7 @@ public final class MovementListener implements Listener {
         }
         dismountIfRiding(player);
         lastPosition.put(uuid, target);
-        messages.sendFlag(player, set.queryValue(Flags.ENTRY_DENY_MESSAGE), "entry-denied");
+        messages.sendFlag(player, set.queryValue(Flags.ENTRY_DENY_MESSAGE, player.getUniqueId()), "entry-denied");
         player.teleportAsync(target);
     }
 
@@ -515,14 +517,14 @@ public final class MovementListener implements Listener {
 
         if (entering && !toSet.testState(Flags.ENTRY, uuid) && !isMember(toSet, uuid)) {
             DenyDebug.explain(player, Flags.ENTRY, toSet);
-            messages.sendFlag(player, toSet.queryValue(Flags.ENTRY_DENY_MESSAGE), "entry-denied");
+            messages.sendFlag(player, toSet.queryValue(Flags.ENTRY_DENY_MESSAGE, player.getUniqueId()), "entry-denied");
             return true;
         }
 
         if (leaving && !fromSet.testState(Flags.EXIT, uuid) && !isMember(fromSet, uuid)
-            && !Boolean.TRUE.equals(fromSet.queryValue(Flags.EXIT_OVERRIDE))) {
+            && !Boolean.TRUE.equals(fromSet.queryValue(Flags.EXIT_OVERRIDE, player.getUniqueId()))) {
             DenyDebug.explain(player, Flags.EXIT, fromSet);
-            messages.sendFlag(player, fromSet.queryValue(Flags.EXIT_DENY_MESSAGE), "exit-denied");
+            messages.sendFlag(player, fromSet.queryValue(Flags.EXIT_DENY_MESSAGE, player.getUniqueId()), "exit-denied");
             return true;
         }
         if (entering && levelsInUse(toSet) && !isMember(toSet, uuid) && levelDenied(player, toSet)) {
@@ -669,7 +671,6 @@ public final class MovementListener implements Listener {
         final boolean limited = entering && toSet.worldUses(Flags.PLAYER_COUNT_LIMIT);
         final boolean levelled = entering && levelsInUse(toSet);
         final boolean sessions = SessionDispatch.ACTIVE;
-        final boolean exitGuarded = leaving && !Boolean.TRUE.equals(fromSet.queryValue(Flags.EXIT_OVERRIDE));
         final World world = to.getWorld();
 
         List<Player> denied = null;
@@ -680,10 +681,11 @@ public final class MovementListener implements Listener {
             final UUID uuid = player.getUniqueId();
             if (entering && !toSet.testState(Flags.ENTRY, uuid) && !isMember(toSet, uuid)) {
                 DenyDebug.explain(player, Flags.ENTRY, toSet);
-                messages.sendFlag(player, toSet.queryValue(Flags.ENTRY_DENY_MESSAGE), "entry-denied");
-            } else if (exitGuarded && !fromSet.testState(Flags.EXIT, uuid) && !isMember(fromSet, uuid)) {
+                messages.sendFlag(player, toSet.queryValue(Flags.ENTRY_DENY_MESSAGE, player.getUniqueId()), "entry-denied");
+            } else if (leaving && !Boolean.TRUE.equals(fromSet.queryValue(Flags.EXIT_OVERRIDE, uuid))
+                && !fromSet.testState(Flags.EXIT, uuid) && !isMember(fromSet, uuid)) {
                 DenyDebug.explain(player, Flags.EXIT, fromSet);
-                messages.sendFlag(player, fromSet.queryValue(Flags.EXIT_DENY_MESSAGE), "exit-denied");
+                messages.sendFlag(player, fromSet.queryValue(Flags.EXIT_DENY_MESSAGE, player.getUniqueId()), "exit-denied");
             } else if (levelled && !isMember(toSet, uuid) && levelDenied(player, toSet)) {
                 messages.send(player, "entry-denied");
             } else if ((!limited || !countDenied(world, player, uuid, fromSet, toSet))
@@ -736,7 +738,7 @@ public final class MovementListener implements Listener {
             final ApplicableRegionSet set = query.getApplicableRegions(mount);
             if (!set.testState(Flags.ENTRY, player.getUniqueId()) && !isMember(set, player.getUniqueId())) {
                 event.setCancelled(true);
-                messages.sendFlag(player, set.queryValue(Flags.ENTRY_DENY_MESSAGE), "entry-denied");
+                messages.sendFlag(player, set.queryValue(Flags.ENTRY_DENY_MESSAGE, player.getUniqueId()), "entry-denied");
                 return;
             }
         }
@@ -809,34 +811,45 @@ public final class MovementListener implements Listener {
         }
     }
 
+    private static <T> @Nullable T regionValue(final ProtectedRegion region, final Flag<T> flag, final UUID uuid) {
+        final T value = region.getFlag(flag);
+        if (value == null) {
+            return null;
+        }
+        final RegionGroup group = region.getFlagGroup(flag);
+        return group == RegionGroup.ALL || group.contains(region.getAssociation(uuid)) ? value : null;
+    }
+
     private void onEnterRegion(final Player player, final ProtectedRegion region) {
         fireEnter(player, region);
-        final String greeting = region.getFlag(Flags.GREETING);
+        final UUID uuid = player.getUniqueId();
+        final String greeting = regionValue(region, Flags.GREETING, uuid);
         if (greeting != null) {
             player.sendMessage(messages.render(greeting, player));
         }
-        showTitle(player, region.getFlag(Flags.GREETING_TITLE));
+        showTitle(player, regionValue(region, Flags.GREETING_TITLE, uuid));
         notifyStaff(player, region, Flags.NOTIFY_ENTER, "notify-enter");
-        runCommand(player, region.getFlag(Flags.COMMAND_ON_ENTRY), false);
-        runCommand(player, region.getFlag(Flags.CONSOLE_COMMAND_ON_ENTRY), true);
-        playSound(player, region.getFlag(Flags.PLAY_SOUNDS));
-        teleport(player, region.getFlag(Flags.TELEPORT_ON_ENTRY));
-        if (region.getFlag(Flags.CHAMBERED_ENDERPEARL) == State.DENY) {
-            pearls.removeFor(player.getUniqueId());
+        runCommand(player, regionValue(region, Flags.COMMAND_ON_ENTRY, uuid), false);
+        runCommand(player, regionValue(region, Flags.CONSOLE_COMMAND_ON_ENTRY, uuid), true);
+        playSound(player, regionValue(region, Flags.PLAY_SOUNDS, uuid));
+        teleport(player, regionValue(region, Flags.TELEPORT_ON_ENTRY, uuid));
+        if (regionValue(region, Flags.CHAMBERED_ENDERPEARL, uuid) == State.DENY) {
+            pearls.removeFor(uuid);
         }
     }
 
     private void onLeaveRegion(final Player player, final ProtectedRegion region) {
         fireExit(player, region);
-        final String farewell = region.getFlag(Flags.FAREWELL);
+        final UUID uuid = player.getUniqueId();
+        final String farewell = regionValue(region, Flags.FAREWELL, uuid);
         if (farewell != null) {
             player.sendMessage(messages.render(farewell, player));
         }
-        showTitle(player, region.getFlag(Flags.FAREWELL_TITLE));
+        showTitle(player, regionValue(region, Flags.FAREWELL_TITLE, uuid));
         notifyStaff(player, region, Flags.NOTIFY_LEAVE, "notify-leave");
-        runCommand(player, region.getFlag(Flags.COMMAND_ON_EXIT), false);
-        runCommand(player, region.getFlag(Flags.CONSOLE_COMMAND_ON_EXIT), true);
-        teleport(player, region.getFlag(Flags.TELEPORT_ON_EXIT));
+        runCommand(player, regionValue(region, Flags.COMMAND_ON_EXIT, uuid), false);
+        runCommand(player, regionValue(region, Flags.CONSOLE_COMMAND_ON_EXIT, uuid), true);
+        teleport(player, regionValue(region, Flags.TELEPORT_ON_EXIT, uuid));
     }
 
     /**
@@ -855,7 +868,7 @@ public final class MovementListener implements Listener {
     private void notifyStaff(
         final Player player, final ProtectedRegion region, final BooleanFlag flag, final String messageKey
     ) {
-        if (!Boolean.TRUE.equals(region.getFlag(flag))) {
+        if (!Boolean.TRUE.equals(regionValue(region, flag, player.getUniqueId()))) {
             return;
         }
         final Set<UUID> staff = ticks.notifyStaff();
@@ -988,11 +1001,11 @@ public final class MovementListener implements Listener {
 
     private boolean levelDenied(final Player player, final ApplicableRegionSet toSet) {
         final int level = player.getLevel();
-        final Integer min = levelThreshold(player, toSet.queryValue(Flags.ENTRY_MIN_LEVEL));
+        final Integer min = levelThreshold(player, toSet.queryValue(Flags.ENTRY_MIN_LEVEL, player.getUniqueId()));
         if (min != null && level < min) {
             return true;
         }
-        final Integer max = levelThreshold(player, toSet.queryValue(Flags.ENTRY_MAX_LEVEL));
+        final Integer max = levelThreshold(player, toSet.queryValue(Flags.ENTRY_MAX_LEVEL, player.getUniqueId()));
         return max != null && level > max;
     }
 
@@ -1016,7 +1029,7 @@ public final class MovementListener implements Listener {
             if (contains(fromSet, region) || region.isMember(uuid)) {
                 continue;
             }
-            final Integer limit = region.getFlag(Flags.PLAYER_COUNT_LIMIT);
+            final Integer limit = regionValue(region, Flags.PLAYER_COUNT_LIMIT, uuid);
             if (limit == null || world.getPlayerCount() < limit) {
                 continue;
             }
@@ -1121,7 +1134,7 @@ public final class MovementListener implements Listener {
         final boolean bypass = Bypass.has(player);
 
         final GameMode mode = toSet.worldUses(Flags.GAME_MODE) && !bypass
-            ? parseGameMode(toSet.queryValue(Flags.GAME_MODE)) : null;
+            ? parseGameMode(toSet.queryValue(Flags.GAME_MODE, uuid)) : null;
         if (mode != null) {
             if (appliedGameModes.get(uuid) != mode) {
                 appliedGameModes.put(uuid, mode);
@@ -1140,7 +1153,7 @@ public final class MovementListener implements Listener {
             }
         }
 
-        final Double walk = toSet.worldUses(Flags.WALK_SPEED) && !bypass ? toSet.queryValue(Flags.WALK_SPEED) : null;
+        final Double walk = toSet.worldUses(Flags.WALK_SPEED) && !bypass ? toSet.queryValue(Flags.WALK_SPEED, uuid) : null;
         if (walk != null) {
             final float target = clampSpeed(walk.floatValue());
             if (player.getWalkSpeed() != target) {
@@ -1159,7 +1172,7 @@ public final class MovementListener implements Listener {
             }
         }
 
-        final Double fly = toSet.worldUses(Flags.FLY_SPEED) && !bypass ? toSet.queryValue(Flags.FLY_SPEED) : null;
+        final Double fly = toSet.worldUses(Flags.FLY_SPEED) && !bypass ? toSet.queryValue(Flags.FLY_SPEED, uuid) : null;
         if (fly != null) {
             final float target = clampSpeed(fly.floatValue());
             if (player.getFlySpeed() != target) {
@@ -1178,7 +1191,7 @@ public final class MovementListener implements Listener {
             }
         }
 
-        final Boolean allowFly = toSet.worldUses(Flags.FLY) && !bypass ? toSet.queryValue(Flags.FLY) : null;
+        final Boolean allowFly = toSet.worldUses(Flags.FLY) && !bypass ? toSet.queryValue(Flags.FLY, uuid) : null;
         if (allowFly != null) {
             if (player.getAllowFlight() != allowFly) {
                 owedChanged |= savedAllowFlight.putIfAbsent(uuid, player.getAllowFlight()) == null;
@@ -1203,11 +1216,11 @@ public final class MovementListener implements Listener {
         }
 
         collision.set(player, !bypass && toSet.worldUses(Flags.DISABLE_COLLISION)
-            && Boolean.TRUE.equals(toSet.queryValue(Flags.DISABLE_COLLISION)));
+            && Boolean.TRUE.equals(toSet.queryValue(Flags.DISABLE_COLLISION, uuid)));
 
         if (toSet.worldUses(Flags.CHAT_PREFIX) || toSet.worldUses(Flags.CHAT_SUFFIX)) {
-            chatTags.setPrefix(uuid, toSet.queryValue(Flags.CHAT_PREFIX));
-            chatTags.setSuffix(uuid, toSet.queryValue(Flags.CHAT_SUFFIX));
+            chatTags.setPrefix(uuid, toSet.queryValue(Flags.CHAT_PREFIX, uuid));
+            chatTags.setSuffix(uuid, toSet.queryValue(Flags.CHAT_SUFFIX, uuid));
         } else {
             chatTags.setPrefix(uuid, null);
             chatTags.setSuffix(uuid, null);
@@ -1222,7 +1235,7 @@ public final class MovementListener implements Listener {
         }
 
         applyHidePlayers(player, uuid, !bypass && toSet.worldUses(Flags.HIDE_PLAYERS)
-            && Boolean.TRUE.equals(toSet.queryValue(Flags.HIDE_PLAYERS)));
+            && Boolean.TRUE.equals(toSet.queryValue(Flags.HIDE_PLAYERS, uuid)));
     }
 
     /**

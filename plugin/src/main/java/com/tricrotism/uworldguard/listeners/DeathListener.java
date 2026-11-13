@@ -37,11 +37,11 @@ public final class DeathListener implements Listener {
         }
         final Player victim = event.getEntity();
         final ApplicableRegionSet set = query.getApplicableRegions(victim);
-        if (Boolean.TRUE.equals(set.queryValue(Flags.KEEP_INVENTORY))) {
+        if (Boolean.TRUE.equals(set.queryValue(Flags.KEEP_INVENTORY, victim.getUniqueId()))) {
             event.setKeepInventory(true);
             event.getDrops().clear();
         }
-        if (Boolean.TRUE.equals(set.queryValue(Flags.KEEP_EXP))) {
+        if (Boolean.TRUE.equals(set.queryValue(Flags.KEEP_EXP, victim.getUniqueId()))) {
             event.setKeepLevel(true);
             event.setDroppedExp(0);
         }

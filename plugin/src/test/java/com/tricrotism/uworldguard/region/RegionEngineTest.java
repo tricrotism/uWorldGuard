@@ -114,6 +114,55 @@ class RegionEngineTest {
     }
 
     @Test
+    void aSetHeldAcrossAGroupQualifierEditHonoursIt() {
+        final RegionManager manager = new RegionManager();
+        final UUID member = UUID.randomUUID();
+        final ProtectedCuboidRegion town = cuboid("town", 0, 0, 15, 15);
+        town.getMembers().addPlayer(member);
+        town.setFlag(Flags.PVP, State.DENY);
+        town.setFlag(Flags.GREETING, "keep out");
+        manager.addRegion(town);
+        final ApplicableRegionSet held = manager.getApplicableRegions(8, 64, 8);
+        assertEquals(State.DENY, held.queryState(Flags.PVP, member));
+
+        town.setFlagGroup(Flags.PVP, RegionGroup.NON_MEMBERS);
+        town.setFlagGroup(Flags.GREETING, RegionGroup.NON_MEMBERS);
+
+        assertEquals(State.ALLOW, held.queryState(Flags.PVP, member));
+        assertNull(held.queryValue(Flags.GREETING, member));
+    }
+
+    @Test
+    void aDenyListQualifiedToNonMembersSparesMembers() {
+        final RegionManager manager = new RegionManager();
+        final UUID member = UUID.randomUUID();
+        final UUID stranger = UUID.randomUUID();
+        final ProtectedCuboidRegion town = cuboid("town", 0, 0, 15, 15);
+        town.getMembers().addPlayer(member);
+        town.setFlag(Flags.BLOCKED_CMDS, java.util.Set.of("/home"));
+        town.setFlagGroup(Flags.BLOCKED_CMDS, RegionGroup.NON_MEMBERS);
+        manager.addRegion(town);
+
+        final ApplicableRegionSet set = manager.getApplicableRegions(8, 64, 8);
+
+        assertTrue(set.flagSetContains(Flags.BLOCKED_CMDS, "/home", stranger));
+        assertFalse(set.flagSetContains(Flags.BLOCKED_CMDS, "/home", member));
+        assertTrue(set.flagSetContains(Flags.BLOCKED_CMDS, "/home"), "the subjectless check ignores groups");
+    }
+
+    @Test
+    void aGlobalBuildDenyQualifiedToOwnersSparesEveryoneElse() {
+        final RegionManager manager = new RegionManager();
+        final GlobalProtectedRegion global = new GlobalProtectedRegion();
+        global.setFlag(Flags.BUILD, State.DENY);
+        global.setFlagGroup(Flags.BUILD, RegionGroup.OWNERS);
+        manager.addRegion(global);
+
+        assertTrue(manager.getApplicableRegions(500, 64, 500).canBuild(UUID.randomUUID()),
+            "a deny restricted to owners leaves a non-owner unaffected");
+    }
+
+    @Test
     void aRegionAddedAfterALookupJoinsTheSet() {
         final RegionManager manager = new RegionManager();
         manager.addRegion(cuboid("claim", 0, 0, 15, 15));
