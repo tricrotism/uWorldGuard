@@ -22,6 +22,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockShearEntityEvent;
 import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.entity.PlayerLeashEntityEvent;
+import org.bukkit.event.entity.SheepDyeWoolEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.EquipmentSlot;
 import org.jspecify.annotations.NullMarked;
@@ -164,7 +165,8 @@ public final class InteractionListener implements Listener {
         final Entity target = event.getRightClicked();
         if (!(target instanceof StorageMinecart || target instanceof HopperMinecart
             || target instanceof ChestBoat
-            || target instanceof ChestedHorse horse && horse.isCarryingChest())) {
+            || target instanceof ChestedHorse horse && horse.isCarryingChest()
+            || target instanceof AbstractHorse mount && mount.isTamed() && event.getPlayer().isSneaking())) {
             return;
         }
         if (EventGate.disabled(event)) {
@@ -177,6 +179,14 @@ public final class InteractionListener implements Listener {
         }
         event.setCancelled(true);
         messages.sendRegionDeny(player, Flags.CHEST_ACCESS, set);
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDyeSheep(final SheepDyeWoolEvent event) {
+        final Player player = event.getPlayer();
+        if (player != null && !EventGate.disabled(event)) {
+            deny(event, player, event.getEntity(), Flags.INTERACT);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)

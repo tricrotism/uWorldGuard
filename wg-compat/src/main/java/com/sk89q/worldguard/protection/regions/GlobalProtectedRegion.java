@@ -26,6 +26,18 @@ public class GlobalProtectedRegion extends ProtectedRegion {
 
     public GlobalProtectedRegion(final String id, final boolean transientRegion) {
         super(new com.tricrotism.uworldguard.region.GlobalProtectedRegion(), transientRegion);
+        this.uwgRequestedId = id;
+    }
+
+    private String uwgRequestedId = com.tricrotism.uworldguard.region.GlobalProtectedRegion.ID;
+
+    /**
+     * Internal: whether this was built under another id, WorldGuard's idiom for a template region
+     * with no area. The engine has one global region per world, so adding such a region would replace
+     * the real one and its flags.
+     */
+    public final boolean uwgIsTemplate() {
+        return !com.tricrotism.uworldguard.region.GlobalProtectedRegion.ID.equalsIgnoreCase(uwgRequestedId);
     }
 
     /**

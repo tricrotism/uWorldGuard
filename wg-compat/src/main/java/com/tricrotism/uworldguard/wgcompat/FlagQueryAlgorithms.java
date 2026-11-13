@@ -48,7 +48,7 @@ public final class FlagQueryAlgorithms {
             if (!appliesTo(region, flag, association)) {
                 continue;
             }
-            final StateFlag.State value = region.getFlag(flag);
+            final StateFlag.State value = region.uwgInheritedFlag(flag);
             if (value == null) {
                 continue;
             }
@@ -83,7 +83,7 @@ public final class FlagQueryAlgorithms {
             if (!appliesTo(region, flag, association)) {
                 continue;
             }
-            final V value = region.getFlag(flag);
+            final V value = region.uwgInheritedFlag(flag);
             if (value != null) {
                 return value;
             }
@@ -109,7 +109,7 @@ public final class FlagQueryAlgorithms {
             if (!appliesTo(region, flag, association)) {
                 continue;
             }
-            final V value = region.getFlag(flag);
+            final V value = region.uwgInheritedFlag(flag);
             if (value != null) {
                 values.add(value);
             }
@@ -136,7 +136,7 @@ public final class FlagQueryAlgorithms {
         ProtectedRegion top = null;
         for (int i = 0, n = regions.size(); i < n; i++) {
             final ProtectedRegion region = regions.get(i);
-            if (region.getFlag(Flags.PASSTHROUGH) != StateFlag.State.ALLOW) {
+            if (region.uwgInheritedFlag(Flags.PASSTHROUGH) != StateFlag.State.ALLOW) {
                 top = region;
                 break;
             }
@@ -149,7 +149,7 @@ public final class FlagQueryAlgorithms {
         StateFlag.State explicit = null;
         for (int i = 0, n = regions.size(); i < n; i++) {
             final ProtectedRegion region = regions.get(i);
-            if (region.getFlag(Flags.PASSTHROUGH) == StateFlag.State.ALLOW) {
+            if (region.uwgInheritedFlag(Flags.PASSTHROUGH) == StateFlag.State.ALLOW) {
                 continue;
             }
             if (region.getPriority() != topPriority) {
@@ -158,7 +158,7 @@ public final class FlagQueryAlgorithms {
             if (!appliesTo(region, Flags.BUILD, association)) {
                 continue;
             }
-            final StateFlag.State value = region.getFlag(Flags.BUILD);
+            final StateFlag.State value = region.uwgInheritedFlag(Flags.BUILD);
             if (value != null) {
                 explicit = explicit == StateFlag.State.DENY ? StateFlag.State.DENY : value;
             }
@@ -192,7 +192,8 @@ public final class FlagQueryAlgorithms {
         if (groupFlag == null) {
             return true;
         }
-        final RegionGroup group = region.getFlag(groupFlag);
+        final RegionGroup explicit = region.uwgInheritedFlag(groupFlag);
+        final RegionGroup group = explicit != null ? explicit : groupFlag.getDefault();
         return group == null || group.contains(association);
     }
 }

@@ -184,6 +184,13 @@ public final class RegionManager {
     }
 
     public void addRegion(final ProtectedRegion region) {
+        if (region instanceof com.sk89q.worldguard.protection.regions.GlobalProtectedRegion global
+            && global.uwgIsTemplate()) {
+            java.util.logging.Logger.getLogger("uWorldGuard").warning("A plugin added a global region under"
+                + " its own id as a template. uWorldGuard has one global region per world, so it was"
+                + " not added, since adding it would have replaced __global__ and its flags.");
+            return;
+        }
         region.uwgAttach(backing);
         adoptParent(region.uwgBacking());
         backing.addRegion(region.uwgBacking());

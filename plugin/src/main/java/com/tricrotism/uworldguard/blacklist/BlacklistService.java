@@ -8,6 +8,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
@@ -18,10 +19,7 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
@@ -60,6 +58,8 @@ public final class BlacklistService {
     private final Map<Repeat, Long> lastReported = new ConcurrentHashMap<>();
     private volatile @Nullable Blacklist global;
     private volatile Map<String, Blacklist> byWorld = Map.of();
+    private volatile boolean notifies;
+    private volatile Set<UUID> staff = Set.of();
 
     public BlacklistService(final Plugin plugin, final MessageService messages) {
         this.plugin = plugin;
@@ -72,6 +72,7 @@ public final class BlacklistService {
         final List<Entry> shared = Blacklist.parse(config.getMapList("blacklist.entries"), "blacklist.entries", logger);
 
         final Map<String, Blacklist> map = new HashMap<>();
+        boolean anyNotify = notifies(shared);
         final ConfigurationSection worlds = config.getConfigurationSection("worlds");
         if (worlds != null) {
             for (final String world : worlds.getKeys(false)) {
@@ -79,9 +80,11 @@ public final class BlacklistService {
                 if (section == null) {
                     continue;
                 }
+                final List<Entry> own = Blacklist.parse(section.getMapList("entries"),
+                    "worlds." + world + ".blacklist.entries", logger);
+                anyNotify |= notifies(own);
                 final List<Entry> entries = new ArrayList<>(shared);
-                entries.addAll(Blacklist.parse(section.getMapList("entries"),
-                    "worlds." + world + ".blacklist.entries", logger));
+                entries.addAll(own);
                 final Blacklist list = Blacklist.of(section.getBoolean("use-as-whitelist", whitelist), entries);
                 if (list != null) {
                     map.put(world, list);
@@ -90,6 +93,7 @@ public final class BlacklistService {
         }
         this.global = Blacklist.of(whitelist, shared);
         this.byWorld = Map.copyOf(map);
+        this.notifies = anyNotify;
         log.configure(config.getBoolean("blacklist.logging.console", true),
             config.getBoolean("blacklist.logging.file", true));
         lastReported.clear();
@@ -97,6 +101,34 @@ public final class BlacklistService {
 
     public void start() {
         log.start();
+    }
+
+    /**
+     * Sets the online holders of {@link #NOTIFY_PERMISSION} that staff reports go to. Until it is
+     * set, nobody receives them.
+     */
+    public void useStaff(final Set<UUID> holders) {
+        this.staff = holders;
+    }
+
+    /**
+     * @return whether any loaded entry reports to staff, so their permission is worth tracking
+     */
+    public boolean notifies() {
+        return notifies;
+    }
+
+    private static boolean notifies(final List<Entry> entries) {
+        for (final Entry entry : entries) {
+            for (final Rule rule : Rule.values()) {
+                for (final Action action : entry.actions(rule)) {
+                    if (action == Action.NOTIFY) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     public void stop() {
@@ -243,28 +275,35 @@ public final class BlacklistService {
     }
 
     /**
-     * Walks the online players from the global region thread, then hops onto each recipient's own
-     * thread for the {@link #NOTIFY_PERMISSION} test and the send.
+     * Renders the report once and hops onto each tracked holder's own thread for the
+     * {@link #NOTIFY_PERMISSION} test and the send. The test repeats there because the holder list
+     * is up to a second old. Walking every online player instead cost one task per player per
+     * report, and a dispenser farm reports once per dispenser per repeat window.
      */
     private void notifyStaff(final String who, final Entry entry, final Rule rule, final Material target) {
+        final Set<UUID> holders = staff;
+        if (holders.isEmpty()) {
+            return;
+        }
         final String comment = entry.comment();
-        plugin.getServer().getGlobalRegionScheduler().execute(plugin, () -> {
-            final Component line = messages.broadcast("blacklist-notify",
-                Placeholder.unparsed("player", who),
-                Placeholder.unparsed("action", rule.description()),
-                Placeholder.component("item", Component.translatable(target.translationKey())),
-                Placeholder.unparsed("comment", comment != null ? " (" + comment + ")" : ""));
-            if (line == null) {
-                return;
-            }
-            for (final Player staff : plugin.getServer().getOnlinePlayers()) {
-                staff.getScheduler().run(plugin, task -> {
-                    if (staff.hasPermission(NOTIFY_PERMISSION)) {
-                        staff.sendMessage(line);
+        final Component line = messages.broadcast("blacklist-notify",
+            Placeholder.unparsed("player", who),
+            Placeholder.unparsed("action", rule.description()),
+            Placeholder.component("item", Component.translatable(target.translationKey())),
+            Placeholder.unparsed("comment", comment != null ? " (" + comment + ")" : ""));
+        if (line == null) {
+            return;
+        }
+        for (final UUID id : holders) {
+            final Player recipient = Bukkit.getPlayer(id);
+            if (recipient != null) {
+                recipient.getScheduler().run(plugin, _ -> {
+                    if (recipient.hasPermission(NOTIFY_PERMISSION)) {
+                        recipient.sendMessage(line);
                     }
                 }, null);
             }
-        });
+        }
     }
 
     private static TagResolver[] resolvers(final Rule rule, final Component item) {

@@ -88,7 +88,7 @@ class CrossBorderDamageTest {
         query = container.createQuery();
         final MessageService messages = new MessageService(plugin);
         entities = new EntityListener(container, query);
-        build = new BuildProtectionListener(query, messages);
+        build = new BuildProtectionListener(query, messages, true);
         players = new PlayerStateListener(query, messages);
         vehicles = new VehicleListener(query, messages);
 
@@ -193,6 +193,32 @@ class CrossBorderDamageTest {
         build.onPvp(event);
 
         assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void anEndermitesBiteRespectsMobDamage() {
+        safe.setFlag(Flags.MOB_DAMAGE, State.DENY);
+        final EntityDamageByEntityEvent event = damage(place(new EndermiteMock(server, UUID.randomUUID()), SAFE),
+            playerAt(SAFE), EntityDamageEvent.DamageCause.ENTITY_ATTACK);
+
+        entities.onEntityDamage(event);
+
+        assertTrue(event.isCancelled());
+    }
+
+    @Test
+    void aPearlsEndermiteRespectsMobSpawningAndASpawnEggStillWorks() {
+        safe.setFlag(Flags.MOB_SPAWNING, State.DENY);
+        final CreatureSpawnEvent pearl = new CreatureSpawnEvent(
+            place(new EndermiteMock(server, UUID.randomUUID()), SAFE), CreatureSpawnEvent.SpawnReason.ENDER_PEARL);
+        final CreatureSpawnEvent egg = new CreatureSpawnEvent(
+            place(new EndermiteMock(server, UUID.randomUUID()), SAFE), CreatureSpawnEvent.SpawnReason.SPAWNER_EGG);
+
+        entities.onSpawn(pearl);
+        entities.onSpawn(egg);
+
+        assertTrue(pearl.isCancelled(), "a pearl landing in the region does not bring an endermite with it");
+        assertFalse(egg.isCancelled(), "mob-spawning governs mobs the world spawns, not ones a player places");
     }
 
     @Test

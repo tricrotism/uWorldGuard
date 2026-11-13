@@ -10,9 +10,7 @@ import com.tricrotism.uworldguard.region.ProtectedCuboidRegion;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
 import com.tricrotism.uworldguard.region.RegionManager;
 import com.tricrotism.uworldguard.region.RegionQuery;
-import com.tricrotism.uworldguard.service.ChamberedPearlTracker;
-import com.tricrotism.uworldguard.service.CollisionService;
-import com.tricrotism.uworldguard.service.PendingRestores;
+import com.tricrotism.uworldguard.service.*;
 import com.tricrotism.uworldguard.storage.RegionStore;
 import com.tricrotism.uworldguard.text.ChatTags;
 import com.tricrotism.uworldguard.text.MessageService;
@@ -83,8 +81,11 @@ class FoliaTeleportsTest {
         final RegionQuery query = container.createQuery();
         final MessageService messages = new MessageService(plugin);
         final MovementListener movement = new MovementListener(plugin, query, messages, new CollisionService(plugin),
-            new ChamberedPearlTracker(plugin), new ChatTags(), new PendingRestores(plugin), new Settings());
-        folia = new FoliaTeleports(new PlayerStateListener(query, messages), movement, new TravelListener(query));
+            new ChamberedPearlTracker(plugin), new ChatTags(), new PendingRestores(plugin),
+            new PlayerTickService(plugin, container, query, new ChunkUnloadService(plugin, container)),
+            new Settings());
+        folia = new FoliaTeleports(new PlayerStateListener(query, messages), movement, new TravelListener(query),
+            container);
         player = server.addPlayer();
 
         spawn = new ProtectedCuboidRegion("spawn", BlockVector3.at(-100, 0, -100), BlockVector3.at(100, 255, 100));

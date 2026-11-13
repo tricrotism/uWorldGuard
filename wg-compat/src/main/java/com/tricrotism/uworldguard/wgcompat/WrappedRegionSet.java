@@ -189,6 +189,9 @@ public final class WrappedRegionSet implements ApplicableRegionSet {
             if (engine == null) {
                 return flag.getDefault();
             }
+            if (hasGroupDefault(flag)) {
+                return walkValue(flag, engine, uuidOf(subject));
+            }
             final V value = (V) FlagBridge.toShimValue(flag, backing.queryValue(engine, uuidOf(subject)));
             return value != null ? value : flag.getDefault();
         }
@@ -233,19 +236,108 @@ public final class WrappedRegionSet implements ApplicableRegionSet {
         final List<V> values, final Flag<V> flag, final com.tricrotism.uworldguard.flags.Flag<Object> engine,
         final com.tricrotism.uworldguard.region.ProtectedRegion region, final UUID subject
     ) {
-        final Object raw = region.getFlag(engine);
-        if (raw == null) {
-            return;
-        }
-        final com.tricrotism.uworldguard.flags.RegionGroup group = region.getFlagGroup(engine);
-        if (group != com.tricrotism.uworldguard.flags.RegionGroup.ALL
-            && !group.contains(subject == null ? null : region.getAssociation(subject))) {
-            return;
-        }
-        final V value = (V) FlagBridge.toShimValue(flag, raw);
+        final V value = valueIn(flag, engine, region, subject);
         if (value != null) {
             values.add(value);
         }
+    }
+
+    /**
+     * {@code region}'s value for {@code flag} as it applies to {@code subject}, or {@code null}. An
+     * unqualified value takes the shim flag's default group, which the engine does not have:
+     * WorldGuard's {@code entry} and {@code exit} apply to non-members and its {@code teleport} and
+     * {@code spawn} to members unless a region says otherwise.
+     */
+    @SuppressWarnings("unchecked")
+    private static <V> V valueIn(
+        final Flag<V> flag, final com.tricrotism.uworldguard.flags.Flag<Object> engine,
+        final com.tricrotism.uworldguard.region.ProtectedRegion region,
+        final UUID subject
+    ) {
+        final Object raw = region.getFlag(engine);
+        if (raw == null) {
+            return null;
+        }
+        final com.tricrotism.uworldguard.flags.RegionGroup explicit = region.getExplicitFlagGroup(engine);
+        final com.tricrotism.uworldguard.flags.RegionGroup group =
+            explicit != null ? explicit : FlagBridge.toEngineGroup(defaultGroup(flag));
+        if (group != com.tricrotism.uworldguard.flags.RegionGroup.ALL && !group.contains(subject == null
+            ? com.tricrotism.uworldguard.domain.Association.NON_MEMBER : region.getAssociation(subject))) {
+            return null;
+        }
+        return (V) FlagBridge.toShimValue(flag, raw);
+    }
+
+    private static com.sk89q.worldguard.protection.flags.RegionGroup defaultGroup(final Flag<?> flag) {
+        final com.sk89q.worldguard.protection.flags.RegionGroupFlag groupFlag = flag.getRegionGroupFlag();
+        return groupFlag == null ? null : groupFlag.getDefault();
+    }
+
+    /**
+     * Whether the engine's own resolution would differ from WorldGuard's for {@code flag}, because
+     * its default group is not everyone.
+     */
+    private static boolean hasGroupDefault(final Flag<?> flag) {
+        final com.sk89q.worldguard.protection.flags.RegionGroup group = defaultGroup(flag);
+        return group != null && group != com.sk89q.worldguard.protection.flags.RegionGroup.ALL;
+    }
+
+    private com.tricrotism.uworldguard.region.ProtectedRegion engineGlobal() {
+        return manager == null ? null
+            : manager.getRegion(com.tricrotism.uworldguard.region.GlobalProtectedRegion.ID);
+    }
+
+    /**
+     * WorldGuard's state resolution, region by region: the highest priority that has a value for the
+     * subject wins, a deny beats an allow within it, then the global region, then the default.
+     */
+    private StateFlag.State walkState(
+        final StateFlag flag,
+        final com.tricrotism.uworldguard.flags.Flag<Object> engine,
+        final UUID subject
+    ) {
+        boolean found = false;
+        int best = 0;
+        StateFlag.State result = null;
+        for (int i = 0, n = backing.size(); i < n; i++) {
+            final com.tricrotism.uworldguard.region.ProtectedRegion region = backing.get(i);
+            if (found && region.getPriority() < best) {
+                break;
+            }
+            final StateFlag.State value = valueIn(flag, engine, region, subject);
+            if (value == null) {
+                continue;
+            }
+            if (!found) {
+                found = true;
+                best = region.getPriority();
+                result = value;
+            } else if (value == StateFlag.State.DENY) {
+                result = StateFlag.State.DENY;
+            }
+        }
+        if (found) {
+            return result;
+        }
+        final com.tricrotism.uworldguard.region.ProtectedRegion global = engineGlobal();
+        final StateFlag.State value = global == null ? null : valueIn(flag, engine, global, subject);
+        return value != null ? value : flag.getDefault();
+    }
+
+    private <V> V walkValue(
+        final Flag<V> flag,
+        final com.tricrotism.uworldguard.flags.Flag<Object> engine,
+        final UUID subject
+    ) {
+        for (int i = 0, n = backing.size(); i < n; i++) {
+            final V value = valueIn(flag, engine, backing.get(i), subject);
+            if (value != null) {
+                return value;
+            }
+        }
+        final com.tricrotism.uworldguard.region.ProtectedRegion global = engineGlobal();
+        final V value = global == null ? null : valueIn(flag, engine, global, subject);
+        return value != null ? value : flag.getDefault();
     }
 
     @Override
@@ -282,21 +374,24 @@ public final class WrappedRegionSet implements ApplicableRegionSet {
         if (engine == null) {
             return flag.getDefault();
         }
-        // Via a wildcard: Flag<Object> and the engine's Flag<State> are provably distinct types, so
-        // instanceof against the declared type does not compile.
         final com.tricrotism.uworldguard.flags.Flag<?> raw = engine;
+        if (!(raw instanceof com.tricrotism.uworldguard.flags.StateFlag) || hasGroupDefault(flag)) {
+            return walkState(flag, engine, subject);
+        }
         if (raw instanceof com.tricrotism.uworldguard.flags.StateFlag stateFlag) {
             final com.tricrotism.uworldguard.flags.State explicit =
                 backing.queryExplicitState(stateFlag, subject);
             if (explicit == null) {
+                if (flag == com.sk89q.worldguard.protection.flags.Flags.BUILD) {
+                    return backing.canBuild(subject) ? StateFlag.State.ALLOW : null;
+                }
                 return flag.getDefault();
             }
             return explicit == com.tricrotism.uworldguard.flags.State.ALLOW
                 ? StateFlag.State.ALLOW
                 : StateFlag.State.DENY;
         }
-        final StateFlag.State value = (StateFlag.State) FlagBridge.toShimValue(flag, backing.queryValue(engine));
-        return value != null ? value : flag.getDefault();
+        return flag.getDefault();
     }
 
     private List<ProtectedRegion> regionList() {

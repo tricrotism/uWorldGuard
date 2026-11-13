@@ -301,6 +301,14 @@ public abstract class ProtectedRegion {
         return null;
     }
 
+    /**
+     * Flag value set on this region itself, ignoring parents; {@code null} if unset here.
+     */
+    @SuppressWarnings("unchecked")
+    public final <T> @Nullable T getOwnFlag(final Flag<T> flag) {
+        return (T) lookup(flags, flag);
+    }
+
     public final <T> void setFlag(final Flag<T> flag, final @Nullable T value) {
         final Object previous = put(false, flag, value);
         final RegionManager manager = owner;
@@ -418,6 +426,27 @@ public abstract class ProtectedRegion {
             }
         }
         return RegionGroup.ALL;
+    }
+
+    /**
+     * {@link #getFlagGroup} without the fallback: the group someone qualified the flag with, here or
+     * on the parent the value is inherited from, or {@code null} when the value is unqualified. Lets
+     * a caller with its own default group tell "everyone" apart from "nobody said".
+     */
+    public final @Nullable RegionGroup getExplicitFlagGroup(final Flag<?> flag) {
+        for (@Nullable ProtectedRegion r = this; r != null; r = r.parent) {
+            final Object[] groups = r.flagGroups;
+            if (groups.length != 0) {
+                final Object group = lookup(groups, flag);
+                if (group != null) {
+                    return (RegionGroup) group;
+                }
+            }
+            if (lookup(r.flags, flag) != null) {
+                return null;
+            }
+        }
+        return null;
     }
 
     /**

@@ -85,7 +85,7 @@ public final class PacketSink implements PacketHooks.Sink {
     @Override
     public void collision(final String entry, final boolean disabled) {
         final ScoreboardManager manager = Bukkit.getScoreboardManager();
-        if (manager == null) {
+        if (manager == null || !plugin.isEnabled()) {
             return;
         }
         final Scoreboard main = manager.getMainScoreboard();

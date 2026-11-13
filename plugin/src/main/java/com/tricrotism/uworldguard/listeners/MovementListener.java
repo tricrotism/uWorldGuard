@@ -16,13 +16,13 @@ import com.tricrotism.uworldguard.region.RegionQuery;
 import com.tricrotism.uworldguard.service.ChamberedPearlTracker;
 import com.tricrotism.uworldguard.service.CollisionService;
 import com.tricrotism.uworldguard.service.PendingRestores;
+import com.tricrotism.uworldguard.service.PlayerTickService;
 import com.tricrotism.uworldguard.text.ChatTags;
 import com.tricrotism.uworldguard.text.DenyDebug;
 import com.tricrotism.uworldguard.text.MessageService;
 import com.tricrotism.uworldguard.util.Locations;
 import com.tricrotism.uworldguard.wgcompat.SessionDispatch;
 import io.papermc.paper.event.entity.EntityMoveEvent;
-import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.title.Title;
@@ -44,7 +44,6 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Enforces entry/exit and entry-level flags, runs per-region enter/leave effects (greeting/farewell,
@@ -55,7 +54,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 @NullMarked
 public final class MovementListener implements Listener {
 
-    private static final String NOTIFY_PERMISSION = "uworldguard.notify";
     /**
      * Every flag {@link #applyState} reads.
      */
@@ -100,17 +98,12 @@ public final class MovementListener implements Listener {
      * Polls between containment sweeps, chosen so a sweep lands roughly once a second.
      */
     private volatile int sweepEvery;
-    /**
-     * One repeating poll per online player, so the task can be cancelled when they leave and when a
-     * reload retunes the interval. Folia retires an entity's tasks with the entity, so the handle is
-     * held for the reload case rather than for the quit case.
-     */
-    private final Map<UUID, ScheduledTask> pollTasks = new ConcurrentHashMap<>();
+    private final PlayerTickService ticks;
 
     public MovementListener(
         final Plugin plugin, final RegionQuery query, final MessageService messages,
         final CollisionService collision, final ChamberedPearlTracker pearls, final ChatTags chatTags,
-        final PendingRestores restores, final Settings settings
+        final PendingRestores restores, final PlayerTickService ticks, final Settings settings
     ) {
         this.plugin = plugin;
         this.query = query;
@@ -119,6 +112,7 @@ public final class MovementListener implements Listener {
         this.pearls = pearls;
         this.chatTags = chatTags;
         this.restores = restores;
+        this.ticks = ticks;
         readSettings(settings);
     }
 
@@ -278,53 +272,17 @@ public final class MovementListener implements Listener {
     }
 
     /**
-     * Starts the polled movement tracker when {@code movement.mode: TASK} is configured; a no-op in
-     * event mode. Players online at this point are picked up here, later ones by {@link #onJoin}.
+     * Starts every player's task on {@link PlayerTickService}, carrying the polled movement tracker
+     * when {@code movement.mode: TASK} is configured.
      *
-     * <p>Each player gets their own repeating task on their own entity scheduler, so the position
-     * read and any teleport happen on the thread that owns them. A global task fanning out to every
-     * player instead scheduled one entity task per player per interval — at the default interval that
-     * is five task objects per player per second, all of them queued and woken by the global thread,
-     * for work that only ever touches one player.
+     * <p>The poll rides the player's existing once-a-second task instead of a second task of its own,
+     * so a player carries one repeating task in either mode. It stays on the player's own entity
+     * scheduler, so the position read and any teleport happen on the thread that owns them. A global
+     * task fanning out to every player instead scheduled one entity task per player per interval,
+     * all of them queued and woken by the global thread, for work that only ever touches one player.
      */
     public void start() {
-        if (!taskMode) {
-            return;
-        }
-        for (final Player player : plugin.getServer().getOnlinePlayers()) {
-            startPoll(player);
-        }
-    }
-
-    /**
-     * Schedules {@code player}'s poll, replacing any it already had. Returns silently when the
-     * scheduler refuses, which it does for a player already on their way out.
-     *
-     * <p>No retired callback: Folia cancels the task with the player, {@link #onQuit} drops the
-     * handle, and a retired callback firing after a fast relog would drop the *new* handle instead,
-     * leaving a poll nothing can cancel on reload.
-     */
-    private void startPoll(final Player player) {
-        final UUID uuid = player.getUniqueId();
-        stopPoll(uuid);
-        final AtomicInteger sweepTick = new AtomicInteger();
-        final ScheduledTask task = player.getScheduler().runAtFixedRate(plugin, _ -> {
-            final boolean sweep = sweepTick.incrementAndGet() >= sweepEvery;
-            if (sweep) {
-                sweepTick.set(0);
-            }
-            poll(player, sweep);
-        }, null, taskTicks, taskTicks);
-        if (task != null) {
-            pollTasks.put(uuid, task);
-        }
-    }
-
-    private void stopPoll(final UUID uuid) {
-        final ScheduledTask existing = pollTasks.remove(uuid);
-        if (existing != null) {
-            existing.cancel();
-        }
+        ticks.start(taskMode ? new PlayerTickService.Poll(this::poll, taskTicks, sweepEvery) : null);
     }
 
     /**
@@ -339,33 +297,17 @@ public final class MovementListener implements Listener {
             && settings.movementTaskTicks() == taskTicks) {
             return;
         }
-        stopPolls();
         readSettings(settings);
         lastPosition.clear();
         start();
     }
 
     /**
-     * Cancels every poll. Paper drops a plugin's tasks on disable anyway, but holding the handles
-     * keeps reload honest — without them a mode switch would leave the previous polls running
-     * alongside the new ones, double-enforcing every crossing.
-     *
-     * <p>Mount tracking is left alone: a reload does not change it, and clearing it would stop
-     * enforcing every ride already in progress.
-     */
-    private void stopPolls() {
-        for (final ScheduledTask task : pollTasks.values()) {
-            task.cancel();
-        }
-        pollTasks.clear();
-    }
-
-    /**
-     * Disable-time teardown: the polls, plus the mount listener. Writing {@code mountMovesRegistered}
-     * off the global thread is safe only here, where no further sync can be scheduled.
+     * Disable-time teardown of the mount listener. The polls ride {@link PlayerTickService}, which is
+     * stopped with it. Writing {@code mountMovesRegistered} off the global thread is safe only here,
+     * where no further sync can be scheduled.
      */
     public void stop() {
-        stopPolls();
         HandlerList.unregisterAll(mountMoves);
         mountMovesRegistered = false;
         riddenMounts.clear();
@@ -869,11 +811,13 @@ public final class MovementListener implements Listener {
         }
     }
 
-    private static <T> @Nullable T regionValue(final ProtectedRegion region,
-        final Flag<T> flag, final UUID uuid) {
+    private static <T> @Nullable T regionValue(final ProtectedRegion region, final Flag<T> flag, final UUID uuid) {
+        final T value = region.getFlag(flag);
+        if (value == null) {
+            return null;
+        }
         final RegionGroup group = region.getFlagGroup(flag);
-        return group == RegionGroup.ALL || group.contains(region.getAssociation(uuid))
-            ? region.getFlag(flag) : null;
+        return group == RegionGroup.ALL || group.contains(region.getAssociation(uuid)) ? value : null;
     }
 
     private void onEnterRegion(final Player player, final ProtectedRegion region) {
@@ -913,12 +857,13 @@ public final class MovementListener implements Listener {
      * {@code messageKey} entry in messages.yml — so the announcement can be recoloured, reworded or
      * turned off without touching the flag that triggers it.
      *
-     * <p>The broadcast goes to the global region thread rather than running here: it walks every
-     * online player, which is not work to do inside the move event of the one player who crossed.
-     * Only the crossing player's name is carried across, never the player itself, since that thread
-     * does not own them. The recipients are not owned by it either — a player's permission map is
-     * rewritten unsynchronised on their own thread — so the permission test and the send hop once
-     * more, onto each recipient's entity scheduler.
+     * <p>Only the players {@link PlayerTickService#notifyStaff} lists are reached, so a crossing costs
+     * nothing with no staff online and one hop per staff member otherwise. Walking every online
+     * player instead was one task per player per crossing, which grows with players times
+     * crossings. The line is rendered here, once. A recipient's permission map is rewritten
+     * unsynchronised on their own thread, so the permission test and the send hop onto each
+     * recipient's entity scheduler, and the test is repeated there because the list is up to a
+     * second old.
      */
     private void notifyStaff(
         final Player player, final ProtectedRegion region, final BooleanFlag flag, final String messageKey
@@ -926,36 +871,40 @@ public final class MovementListener implements Listener {
         if (!Boolean.TRUE.equals(regionValue(region, flag, player.getUniqueId()))) {
             return;
         }
-        final String name = player.getName();
-        final String id = region.getId();
-        plugin.getServer().getGlobalRegionScheduler().execute(plugin, () -> {
-            final Component line = messages.broadcast(messageKey,
-                Placeholder.unparsed("player", name),
-                Placeholder.unparsed("region", id));
-            if (line == null) {
-                return;
-            }
-            for (final Player staff : plugin.getServer().getOnlinePlayers()) {
-                staff.getScheduler().run(plugin, task -> {
-                    if (staff.hasPermission(NOTIFY_PERMISSION)) {
-                        staff.sendMessage(line);
+        final Set<UUID> staff = ticks.notifyStaff();
+        if (staff.isEmpty()) {
+            return;
+        }
+        final Component line = messages.broadcast(messageKey,
+            Placeholder.unparsed("player", player.getName()),
+            Placeholder.unparsed("region", region.getId()));
+        if (line == null) {
+            return;
+        }
+        for (final UUID id : staff) {
+            final Player recipient = Bukkit.getPlayer(id);
+            if (recipient != null) {
+                recipient.getScheduler().run(plugin, _ -> {
+                    if (recipient.hasPermission(PlayerTickService.NOTIFY_PERMISSION)) {
+                        recipient.sendMessage(line);
                     }
                 }, null);
             }
-        });
+        }
     }
 
     /**
-     * Shows a greeting/farewell title. A literal {@code \n} splits it into title and subtitle, which is
-     * how WorldGuard writes a two-line title into a region file.
+     * Shows a greeting/farewell title. A line break splits it into title and subtitle. A literal
+     * {@code \n} does too, since that is how a hand-written WorldGuard region file spells it.
      */
     private void showTitle(final Player player, final @Nullable String raw) {
         if (raw == null || raw.isBlank()) {
             return;
         }
-        final int split = raw.indexOf("\\n");
+        final int newline = raw.indexOf('\n');
+        final int split = newline >= 0 ? newline : raw.indexOf("\\n");
         final String main = split < 0 ? raw : raw.substring(0, split);
-        final String sub = split < 0 ? "" : raw.substring(split + 2);
+        final String sub = split < 0 ? "" : raw.substring(split + (newline >= 0 ? 1 : 2));
         player.showTitle(Title.title(
             messages.render(main, player),
             sub.isEmpty() ? Component.empty() : messages.render(sub, player)));
@@ -1081,7 +1030,7 @@ public final class MovementListener implements Listener {
                 continue;
             }
             final Integer limit = regionValue(region, Flags.PLAYER_COUNT_LIMIT, uuid);
-            if (limit == null) {
+            if (limit == null || world.getPlayerCount() < limit) {
                 continue;
             }
             final int count = occupants(world, region, player);
@@ -1178,6 +1127,7 @@ public final class MovementListener implements Listener {
             && savedFlySpeed.isEmpty() && savedAllowFlight.isEmpty()) {
             collision.set(player, false);
             applyHidePlayers(player, uuid, false);
+            chatTags.release(uuid);
             return;
         }
         boolean owedChanged = false;
@@ -1271,11 +1221,17 @@ public final class MovementListener implements Listener {
         if (toSet.worldUses(Flags.CHAT_PREFIX) || toSet.worldUses(Flags.CHAT_SUFFIX)) {
             chatTags.setPrefix(uuid, toSet.queryValue(Flags.CHAT_PREFIX, uuid));
             chatTags.setSuffix(uuid, toSet.queryValue(Flags.CHAT_SUFFIX, uuid));
+        } else {
+            chatTags.setPrefix(uuid, null);
+            chatTags.setSuffix(uuid, null);
         }
 
         if (toSet.worldUses(Flags.SEND_CHAT) || toSet.worldUses(Flags.RECEIVE_CHAT)) {
             chatTags.setMuted(uuid, !bypass && !toSet.testState(Flags.SEND_CHAT, uuid));
             chatTags.setDeafened(uuid, !bypass && !toSet.testState(Flags.RECEIVE_CHAT, uuid));
+        } else {
+            chatTags.setMuted(uuid, false);
+            chatTags.setDeafened(uuid, false);
         }
 
         applyHidePlayers(player, uuid, !bypass && toSet.worldUses(Flags.HIDE_PLAYERS)
@@ -1323,9 +1279,6 @@ public final class MovementListener implements Listener {
     public void onJoin(final PlayerJoinEvent event) {
         final Player joiner = event.getPlayer();
 
-        if (taskMode) {
-            startPoll(joiner);
-        }
         replayPendingRestore(joiner);
         if (SessionDispatch.ACTIVE) {
             SessionDispatch.initialize(joiner);
@@ -1398,15 +1351,24 @@ public final class MovementListener implements Listener {
         }
     }
 
-    @EventHandler
-    public void onQuit(final PlayerQuitEvent event) {
+    /**
+     * Drops the WorldGuard session and player wrapper last. Another plugin's quit handler may still
+     * ask for either, and one handed out after an earlier cleanup stayed cached, pinning the player
+     * and greeting their next login with a stale session.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onQuitSession(final PlayerQuitEvent event) {
         final Player player = event.getPlayer();
-        final UUID uuid = player.getUniqueId();
-        stopPoll(uuid);
         if (SessionDispatch.TRACKING) {
             SessionDispatch.uninitialize(player);
         }
         SessionDispatch.forget(player);
+    }
+
+    @EventHandler
+    public void onQuit(final PlayerQuitEvent event) {
+        final Player player = event.getPlayer();
+        final UUID uuid = player.getUniqueId();
         messages.clear(uuid);
         collision.set(player, false);
         pearls.clear(uuid);

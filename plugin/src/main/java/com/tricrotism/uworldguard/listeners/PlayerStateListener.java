@@ -212,7 +212,7 @@ public final class PlayerStateListener implements Listener {
         if (EventGate.disabled(event)) {
             return;
         }
-        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || event.getHand() != EquipmentSlot.HAND) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK) {
             return;
         }
         final Block block = event.getClickedBlock();
@@ -221,12 +221,15 @@ public final class PlayerStateListener implements Listener {
         }
         final Player player = event.getPlayer();
         final Material type = block.getType();
+        final boolean mainHand = event.getHand() == EquipmentSlot.HAND;
         if (type == Material.RESPAWN_ANCHOR) {
             final ApplicableRegionSet anchorSet = query.getApplicableRegions(block);
             if (!anchorSet.testBuild(player.getUniqueId(), Flags.RESPAWN_ANCHORS) && !Bypass.has(player)
                 && !anchorSet.flagSetContains(Flags.ALLOW_INTERACT, Material.RESPAWN_ANCHOR, player.getUniqueId())) {
                 event.setCancelled(true);
-                messages.sendRegionDeny(player, Flags.RESPAWN_ANCHORS, anchorSet);
+                if (mainHand) {
+                    messages.sendRegionDeny(player, Flags.RESPAWN_ANCHORS, anchorSet);
+                }
             }
             return;
         }
@@ -239,7 +242,9 @@ public final class PlayerStateListener implements Listener {
                 return;
             }
             event.setCancelled(true);
-            messages.sendRegionDeny(player, Flags.CHEST_ACCESS, set);
+            if (mainHand) {
+                messages.sendRegionDeny(player, Flags.CHEST_ACCESS, set);
+            }
         }
     }
 

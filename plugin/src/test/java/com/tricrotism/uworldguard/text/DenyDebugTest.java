@@ -59,7 +59,7 @@ class DenyDebugTest {
         container.loadAll();
         manager = container.get(world);
         assertNotNull(manager);
-        build = new BuildProtectionListener(container.createQuery(), new MessageService(plugin));
+        build = new BuildProtectionListener(container.createQuery(), new MessageService(plugin), true);
         player = server.addPlayer();
         DenyDebug.toggle(player);
     }

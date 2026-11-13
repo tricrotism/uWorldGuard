@@ -75,7 +75,7 @@ class BuildProtectionTest {
         container.loadAll();
         messages = new MessageService(plugin);
         final RegionQuery query = container.createQuery();
-        listener = new BuildProtectionListener(query, messages);
+        listener = new BuildProtectionListener(query, messages, true);
     }
 
     @AfterEach

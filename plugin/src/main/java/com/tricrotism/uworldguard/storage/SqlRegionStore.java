@@ -6,6 +6,7 @@ import org.jspecify.annotations.NullMarked;
 
 import java.sql.*;
 import java.util.Enumeration;
+import java.util.Properties;
 import java.util.logging.Level;
 
 /**
@@ -22,10 +23,17 @@ public final class SqlRegionStore implements RegionStore {
     private final String url;
     private final String user;
     private final String password;
+    private final long connectTimeoutMillis;
     private final RegionSerializer serializer = new RegionSerializer();
     private final String upsertSql;
 
-    public SqlRegionStore(final String url, final String user, final String password) throws SQLException {
+    public SqlRegionStore(
+        final String url,
+        final String user,
+        final String password,
+        final int connectTimeoutSeconds
+    ) throws SQLException {
+        this.connectTimeoutMillis = connectTimeoutSeconds * 1000L;
         this.url = url;
         this.user = user;
         this.password = password;
@@ -37,9 +45,10 @@ public final class SqlRegionStore implements RegionStore {
                 : "INSERT INTO uwg_regions (world, data) VALUES (?, ?)"
                 + " ON CONFLICT(world) DO UPDATE SET data = excluded.data";
             statement.execute("CREATE TABLE IF NOT EXISTS uwg_regions ("
-                + "world VARCHAR(255) PRIMARY KEY, data " + (mysql ? "LONGTEXT" : "TEXT") + " NOT NULL)");
+                + "world VARCHAR(255) PRIMARY KEY, data "
+                + (mysql ? "LONGTEXT CHARACTER SET utf8mb4" : "TEXT") + " NOT NULL)");
             if (mysql) {
-                statement.execute("ALTER TABLE uwg_regions MODIFY data LONGTEXT NOT NULL");
+                statement.execute("ALTER TABLE uwg_regions MODIFY data LONGTEXT CHARACTER SET utf8mb4 NOT NULL");
             }
         }
     }
@@ -150,10 +159,23 @@ public final class SqlRegionStore implements RegionStore {
         }
     }
 
+    /**
+     * The connect timeout goes in as a connection property, which MySQL and MariaDB both read in
+     * milliseconds. {@code DriverManager.setLoginTimeout} would do it too, but it is JVM-wide and
+     * would change every other plugin's connections. A URL that sets its own timeout is left alone,
+     * and SQLite opens a file, so it gets none.
+     */
     private Connection connect() throws SQLException {
-        return user.isEmpty()
-            ? DriverManager.getConnection(url)
-            : DriverManager.getConnection(url, user, password);
+        final Properties info = new Properties();
+        if (!user.isEmpty()) {
+            info.setProperty("user", user);
+            info.setProperty("password", password);
+        }
+        if (connectTimeoutMillis > 0 && (url.startsWith("jdbc:mysql:") || url.startsWith("jdbc:mariadb:"))
+            && !url.contains("connectTimeout")) {
+            info.setProperty("connectTimeout", Long.toString(connectTimeoutMillis));
+        }
+        return DriverManager.getConnection(url, info);
     }
 
     /**

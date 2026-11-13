@@ -235,19 +235,33 @@ public abstract class ProtectedRegion implements ChangeTracked, Comparable<Prote
         return uniqueId != null && backing.isMember(uniqueId);
     }
 
-    @SuppressWarnings("unchecked")
     public <T extends Flag<V>, V> V getFlag(final T flag) {
+        return flagValue(flag, false);
+    }
+
+    /**
+     * Internal: the flag as it applies here, inherited from the parent chain when unset. The query
+     * algorithms resolve with this. {@link #getFlag} answers for this region alone, as WorldGuard's does.
+     */
+    public final <T extends Flag<V>, V> V uwgInheritedFlag(final T flag) {
+        return flagValue(flag, true);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T extends Flag<V>, V> V flagValue(final T flag, final boolean inherit) {
         if (flag instanceof RegionGroupFlag groupFlag) {
             final com.tricrotism.uworldguard.flags.Flag<?> owner = groupFlag.uwgOwner();
-            return owner == null ? null
-                : (V) com.tricrotism.uworldguard.wgcompat.FlagBridge.toShimGroup(backing.getFlagGroup(owner));
+            final com.tricrotism.uworldguard.flags.RegionGroup group =
+                owner == null ? null : backing.getExplicitFlagGroup(owner);
+            return group == null ? null : (V) com.tricrotism.uworldguard.wgcompat.FlagBridge.toShimGroup(group);
         }
         final com.tricrotism.uworldguard.flags.Flag<Object> engine =
             com.tricrotism.uworldguard.wgcompat.FlagBridge.engineFlag(flag);
         if (engine == null) {
             return null;
         }
-        return (V) com.tricrotism.uworldguard.wgcompat.FlagBridge.toShimValue(flag, backing.getFlag(engine));
+        return (V) com.tricrotism.uworldguard.wgcompat.FlagBridge.toShimValue(flag,
+            inherit ? backing.getFlag(engine) : backing.getOwnFlag(engine));
     }
 
     public <T extends Flag<V>, V> void setFlag(final T flag, final V val) {

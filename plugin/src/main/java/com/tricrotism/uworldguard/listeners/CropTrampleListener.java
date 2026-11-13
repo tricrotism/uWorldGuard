@@ -58,13 +58,10 @@ public final class CropTrampleListener implements Listener {
             return;
         }
         final StateFlag flag = trampleFlag(type);
-        if (flag == null || !query.usesFlag(block.getWorld(), flag)) {
+        if (flag == null) {
             return;
         }
-        if (!query.testState(block, flag, player)) {
-            if (Bypass.has(player)) {
-                return;
-            }
+        if (!query.getApplicableRegions(block).testBuild(player.getUniqueId(), flag) && !Bypass.has(player)) {
             event.setCancelled(true);
         }
     }

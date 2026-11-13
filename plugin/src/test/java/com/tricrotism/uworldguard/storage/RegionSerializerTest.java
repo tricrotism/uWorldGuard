@@ -111,6 +111,25 @@ class RegionSerializerTest {
     }
 
     @Test
+    void charactersYamlRefusesRawStillLoad() throws Exception {
+        final String text = "a\nb \u0081 \u009f   ￾ ￿ 😀 lone \ud800 end";
+        final RegionManager manager = new RegionManager();
+        final ProtectedRegion claim = cuboid("claim", 0, 0, 15, 15);
+        claim.setFlag(Flags.GREETING, text);
+        manager.addRegion(claim);
+        final RegionSerializer serializer = new RegionSerializer();
+
+        final String streamed = serializer.streamed(manager);
+        assertNotNull(streamed);
+        final RegionManager loaded = new RegionManager();
+        serializer.fromYaml(streamed, loaded);
+
+        final ProtectedRegion read = loaded.getRegion("claim");
+        assertNotNull(read);
+        assertEquals(text, read.getFlag(Flags.GREETING));
+    }
+
+    @Test
     void aValueOnlyAYamlLibraryCanWriteFallsBackToTheTree() throws Exception {
         final RegionManager manager = new RegionManager();
         final ProtectedRegion claim = cuboid("claim", 0, 0, 15, 15);

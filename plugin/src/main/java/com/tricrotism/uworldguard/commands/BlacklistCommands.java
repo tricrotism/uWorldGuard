@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.function.Function;
 import java.util.logging.Level;
@@ -46,6 +47,8 @@ public final class BlacklistCommands {
     private final BlacklistService blacklist;
     private final Object editLock = new Object();
     private final Object writeLock = new Object();
+    private long edits;
+    private long written;
 
     public BlacklistCommands(final Plugin plugin, final BlacklistService blacklist) {
         this.plugin = plugin;
@@ -292,17 +295,25 @@ public final class BlacklistCommands {
 
     private void apply(final String key, final Object value) {
         final String text;
+        final long edit;
         synchronized (editLock) {
             final FileConfiguration config = plugin.getConfig();
             config.set(key, value);
             blacklist.load(config, plugin.getLogger());
             text = config.saveToString();
+            edit = ++edits;
         }
         final Path file = plugin.getDataFolder().toPath().resolve("config.yml");
         plugin.getServer().getAsyncScheduler().runNow(plugin, task -> {
             synchronized (writeLock) {
+                if (edit < written) {
+                    return;
+                }
+                written = edit;
                 try {
-                    Files.writeString(file, text, StandardCharsets.UTF_8);
+                    final Path temp = file.resolveSibling("config.yml.tmp");
+                    Files.writeString(temp, text, StandardCharsets.UTF_8);
+                    Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
                 } catch (final IOException e) {
                     plugin.getLogger().log(Level.WARNING, "Could not save the blacklist to config.yml", e);
                 }

@@ -213,10 +213,14 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         restores.start();
 
         activatePackets();
-        getServer().getPluginManager().registerEvents(new BuildProtectionListener(query, messages), this);
+        getServer().getPluginManager().registerEvents(new BuildProtectionListener(query, messages, settings.stopGhostClimb()), this);
         getServer().getPluginManager().registerEvents(new PlacedBlocks(this, query, messages), this);
-        final MovementListener movement =
-            new MovementListener(this, query, messages, collision, pearls, chatTags, restores, settings);
+        final ChunkUnloadService chunkUnload = new ChunkUnloadService(this, regionContainer);
+        this.chunkUnload = chunkUnload;
+        final PlayerTickService playerTick = new PlayerTickService(this, regionContainer, query, chunkUnload);
+        this.playerTick = playerTick;
+        blacklist.useStaff(playerTick.watch(BlacklistService.NOTIFY_PERMISSION, blacklist::notifies));
+        final MovementListener movement = new MovementListener(this, query, messages, collision, pearls, chatTags, restores, playerTick, settings);
         this.movement = movement;
         getServer().getPluginManager().registerEvents(movement, this);
         getServer().getPluginManager().registerEvents(new NaturalListener(query), this);
@@ -231,12 +235,10 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         final TravelListener travel = new TravelListener(query);
         getServer().getPluginManager().registerEvents(travel, this);
         if (!CanvasTeleports.register(this, playerState, movement, travel)) {
-            FoliaTeleports.register(this, playerState, movement, travel);
+            FoliaTeleports.register(this, playerState, movement, travel, regionContainer);
         }
         getServer().getPluginManager().registerEvents(new PearlListener(regionContainer, pearls), this);
         getServer().getPluginManager().registerEvents(new ChatInputListener(this, chatInput), this);
-        final ChunkUnloadService chunkUnload = new ChunkUnloadService(this, regionContainer);
-        this.chunkUnload = chunkUnload;
         final WandSelectionProvider wand = selection.wandListener();
         getServer().getPluginManager().registerEvents(
             new WorldListener(regionContainer, chunkUnload, movement, wand), this);
@@ -245,6 +247,9 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         getServer().getPluginManager().registerEvents(new PistonListener(query), this);
         getServer().getPluginManager().registerEvents(new VehicleListener(query, messages), this);
         getServer().getPluginManager().registerEvents(new InteractionListener(query, messages), this);
+        if (settings.safezoneIsolation()) {
+            getServer().getPluginManager().registerEvents(new SafezoneListener(query, messages), this);
+        }
         getServer().getPluginManager().registerEvents(new MachineListener(regionContainer, query, messages), this);
         getServer().getPluginManager().registerEvents(new BlacklistListener(blacklist), this);
         if (wand != null) {
@@ -255,12 +260,9 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
             .register(new MigrationCommands(this, regionContainer), new CompatCommands(),
                 new BlacklistCommands(this, blacklist));
 
+        getServer().getPluginManager().registerEvents(playerTick, this);
         movement.start();
         movement.replayOnlineRestores();
-        final PlayerTickService playerTick = new PlayerTickService(this, regionContainer, query);
-        this.playerTick = playerTick;
-        getServer().getPluginManager().registerEvents(playerTick, this);
-        playerTick.start();
         chunkUnload.start();
 
         if (getServer().getPluginManager().getPlugin("WorldEdit") != null) {
@@ -371,7 +373,7 @@ public final class UWorldGuard extends com.sk89q.worldguard.bukkit.WorldGuardPlu
         if (settings.isSqlEnabled()) {
             try {
                 getLogger().info("Using SQL storage backend.");
-                return new SqlRegionStore(settings.sqlUrl(), settings.sqlUser(), settings.sqlPassword());
+                return new SqlRegionStore(settings.sqlUrl(), settings.sqlUser(), settings.sqlPassword(), settings.sqlConnectTimeoutSeconds());
             } catch (final Exception e) {
                 getLogger().log(Level.SEVERE, "Failed to initialise SQL storage. uWorldGuard is disabling"
                     + " itself rather than run without its regions. Fix storage.sql and restart.", e);

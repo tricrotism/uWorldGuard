@@ -27,6 +27,10 @@ public final class Locations {
             final double z = Double.parseDouble(parts[3].trim());
             final float yaw = parts.length >= 5 ? Float.parseFloat(parts[4].trim()) : 0f;
             final float pitch = parts.length >= 6 ? Float.parseFloat(parts[5].trim()) : 0f;
+            if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
+                || !Float.isFinite(yaw) || !Float.isFinite(pitch)) {
+                return null;
+            }
             return new Location(world, x, y, z, yaw, pitch);
         } catch (final NumberFormatException _) {
             return null;

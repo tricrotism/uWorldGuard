@@ -410,9 +410,11 @@ public final class RegionManager {
     /**
      * For a blast: the regions touching {@code box} ({@code minX, minY, minZ, maxX, maxY, maxZ}) that
      * do not hold all of it, in no order, or {@code null} when every region touching it holds all of
-     * it. A box over at most four chunks reads the chunk cache, so a blast inside its regions builds
-     * and sorts no list.
+     * it. A box over at most {@link #BLAST_CHUNKS} chunks reads the chunk cache, so a blast inside its
+     * regions builds and sorts no list.
      */
+    private static final int BLAST_CHUNKS = 16;
+
     ProtectedRegion @Nullable [] crossing(final int[] box) {
         final int minCx = box[0] >> 4;
         final int maxCx = box[3] >> 4;
@@ -420,7 +422,7 @@ public final class RegionManager {
         final int maxCz = box[5] >> 4;
         ProtectedRegion[] out = null;
         int c = 0;
-        if ((long) (maxCx - minCx + 1) * (maxCz - minCz + 1) <= 4) {
+        if ((long) (maxCx - minCx + 1) * (maxCz - minCz + 1) <= BLAST_CHUNKS) {
             final boolean several = minCx != maxCx || minCz != maxCz;
             for (int cx = minCx; cx <= maxCx; cx++) {
                 for (int cz = minCz; cz <= maxCz; cz++) {

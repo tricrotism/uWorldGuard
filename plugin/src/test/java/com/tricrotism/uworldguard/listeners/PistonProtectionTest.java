@@ -87,8 +87,35 @@ class PistonProtectionTest {
     }
 
     @Test
-    void aPistonReachesIntoARegionThatSaysNothing() {
+    void aPistonCannotReachIntoARegionItDoesNotStandIn() {
+        assertFalse(push(), "the border holds with no flag set, as in WorldGuard");
+    }
+
+    @Test
+    void aRegionThatAllowsPistonsIsOpenToItsNeighbour() {
+        farm.setFlag(Flags.PISTONS, State.ALLOW);
+
         assertTrue(push());
+    }
+
+    @Test
+    void aSharedDomainOpensAnUnflaggedBorder() {
+        farm.setFlag(Flags.NONPLAYER_PROTECTION_DOMAINS, Set.of("wheat"));
+        redstoneRoom.setFlag(Flags.NONPLAYER_PROTECTION_DOMAINS, Set.of("wheat"));
+
+        assertTrue(push());
+    }
+
+    @Test
+    void aPistonMovesBlocksInsideItsOwnRegion() {
+        final Block piston = world.getBlockAt(4, 64, 10);
+        piston.setType(Material.PISTON);
+        final BlockPistonExtendEvent event =
+            new BlockPistonExtendEvent(piston, List.of(world.getBlockAt(5, 64, 10)), BlockFace.EAST);
+
+        listener.onExtend(event);
+
+        assertFalse(event.isCancelled());
     }
 
     @Test

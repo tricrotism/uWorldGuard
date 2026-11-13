@@ -4,6 +4,7 @@ import com.tricrotism.uworldguard.config.Bypass;
 import com.tricrotism.uworldguard.config.EventGate;
 import com.tricrotism.uworldguard.flags.Flags;
 import com.tricrotism.uworldguard.flags.State;
+import com.tricrotism.uworldguard.flags.StateFlag;
 import com.tricrotism.uworldguard.region.ApplicableRegionSet;
 import com.tricrotism.uworldguard.region.ProtectedRegion;
 import com.tricrotism.uworldguard.region.RegionContainerImpl;
@@ -12,6 +13,7 @@ import com.tricrotism.uworldguard.text.MessageService;
 import io.papermc.paper.event.block.VaultChangeStateEvent;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -24,6 +26,7 @@ import org.bukkit.event.block.*;
 import org.bukkit.event.enchantment.EnchantItemEvent;
 import org.bukkit.event.inventory.BrewEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.inventory.Inventory;
 import org.jspecify.annotations.NullMarked;
 
 /**
@@ -64,36 +67,79 @@ public final class MachineListener implements Listener {
      * source sees the flag. A chain pushing into a region is caught at the destination. Either end
      * denying stops the move. The destination is tested first and the source only when it passes.
      *
-     * <p>This is the hottest event the plugin listens to: it fires for every item every hopper moves.
-     * The registry check comes first because {@code getLocation()} allocates a {@link Location} — on a
-     * server where no region sets the flag this handler is a bitset test per world and nothing else:
-     * no allocation, no region resolved.
+     * <p>With the flag unset the border still holds: a hopper may not pull from or push into a region
+     * it does not stand in, as in WorldGuard. The end that moves the item answers for the other one,
+     * like a dispenser for its target.
      *
-     * <p>A transfer never crosses worlds, so the destination's world answers the per-world flag test
-     * and the event gate for both ends. {@code InventoryMoveItemEvent} is not an inventory event, so
-     * the gate is consulted by world and name here.
+     * <p>This is the hottest event the plugin listens to, it fires for every item every hopper moves,
+     * and {@code getLocation()} allocates. So the work is laddered:
+     * <ul>
+     *   <li>no region sets the flag and no world holds a claim: two array walks, nothing allocated;</li>
+     *   <li>the end being acted on is outside every region: one location and one lookup;</li>
+     *   <li>both ends inside the same regions: two locations, two lookups and an identity test, since
+     *       positions the same regions contain share one set.</li>
+     * </ul>
+     *
+     * <p>A transfer never crosses worlds, so one end's world answers the per-world flag test and the
+     * event gate for both. {@code InventoryMoveItemEvent} is not an inventory event, so the gate is
+     * consulted by world and name here.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onHopperTransfer(final InventoryMoveItemEvent event) {
-        if (!container.anyRegionUses(Flags.HOPPER_TRANSFER)) {
+        final boolean flaggedAnywhere = container.anyRegionUses(Flags.HOPPER_TRANSFER);
+        if (!flaggedAnywhere && !container.anyClaims()) {
             return;
         }
-        final Location destination = event.getDestination().getLocation();
-        if (destination == null) {
+        final Inventory initiator = event.getInitiator();
+        final Inventory destination = event.getDestination();
+        final boolean pulling = initiator == destination || initiator.equals(destination);
+        final Location targetAt = (pulling ? event.getSource() : destination).getLocation();
+        final Location known = targetAt != null ? targetAt : initiator.getLocation();
+        if (known == null) {
             return;
         }
-        final World world = destination.getWorld();
-        if (!query.usesFlag(world, Flags.HOPPER_TRANSFER) || EventGate.disabled(world, HOPPER_EVENT)) {
+        final World world = known.getWorld();
+        if (EventGate.disabled(world, HOPPER_EVENT)) {
             return;
         }
-        if (!query.testState(destination, Flags.HOPPER_TRANSFER)) {
+        final boolean flagged = flaggedAnywhere && query.usesFlag(world, Flags.HOPPER_TRANSFER);
+        final ApplicableRegionSet first = query.getApplicableRegions(known);
+        if (flagged && !first.testState(Flags.HOPPER_TRANSFER)) {
             event.setCancelled(true);
             return;
         }
-        final Location source = event.getSource().getLocation();
-        if (source != null && !query.testState(source, Flags.HOPPER_TRANSFER)) {
+        if (targetAt == null || !flagged && first.size() == 0) {
+            return;
+        }
+        final Location actorAt = initiator.getLocation();
+        if (actorAt == null) {
+            return;
+        }
+        final ApplicableRegionSet atActor = query.getApplicableRegions(actorAt);
+        if (atActor == first) {
+            return;
+        }
+        if (flagged && !atActor.testState(Flags.HOPPER_TRANSFER)
+            || !machineMayAct(atActor, first, Flags.HOPPER_TRANSFER)) {
             event.setCancelled(true);
         }
+    }
+
+    /**
+     * Whether a machine standing in {@code atSource} may act on a position in {@code atTarget}. An
+     * explicit {@code flag} there decides outright. Unset, the machine may not reach into a region it
+     * does not stand in, so a claim protected only by membership is safe from machinery beside it.
+     */
+    static boolean machineMayAct(
+        final ApplicableRegionSet atSource,
+        final ApplicableRegionSet atTarget,
+        final StateFlag flag
+    ) {
+        if (atSource == atTarget) {
+            return true;
+        }
+        final State explicit = atTarget.queryExplicitState(flag, null);
+        return explicit != State.DENY && (explicit == State.ALLOW || !entersForeignRegion(atSource, atTarget));
     }
 
     private static final String HOPPER_EVENT = InventoryMoveItemEvent.class.getSimpleName();
@@ -102,8 +148,9 @@ public final class MachineListener implements Listener {
      * A dispenser answers for where it stands, and — when what it dispenses becomes a block — for
      * where that block lands. A dispenser one block outside a region and aimed into it fills the
      * region with water or lava without a {@code BlockPlaceEvent} of anyone's, so the target is
-     * tested too. Only the three fluid buckets get that far: everything else either leaves the world
-     * alone or arrives through an event of its own (a fire charge as {@code BlockIgniteEvent}).
+     * tested too. Only items that act on that block get that far ({@link #actsOnTarget}): everything
+     * else either leaves the world alone or arrives through an event of its own (a fire charge as
+     * {@code BlockIgniteEvent}).
      *
      * <p>The target is protected the way a player's placement would be. An explicit
      * {@code block-place} decides outright. Unset, the fluid is refused when it lands in a region the
@@ -117,8 +164,8 @@ public final class MachineListener implements Listener {
         }
         final Block block = event.getBlock();
         final World world = block.getWorld();
-        final boolean fluid = isFluidBucket(event.getItem().getType());
-        if (!fluid && !query.usesFlag(world, Flags.DISPENSE)) {
+        final boolean reaches = actsOnTarget(event.getItem().getType());
+        if (!reaches && !query.usesFlag(world, Flags.DISPENSE)) {
             return;
         }
         final ApplicableRegionSet atDispenser = query.getApplicableRegions(block);
@@ -126,14 +173,13 @@ public final class MachineListener implements Listener {
             event.setCancelled(true);
             return;
         }
-        if (!fluid || !(block.getBlockData() instanceof Directional directional)) {
+        if (!reaches || !(block.getBlockData() instanceof Directional directional)) {
             return;
         }
         final BlockFace facing = directional.getFacing();
         final ApplicableRegionSet atTarget = query.getApplicableRegions(world,
             block.getX() + facing.getModX(), block.getY() + facing.getModY(), block.getZ() + facing.getModZ());
-        final State explicit = atTarget.queryExplicitState(Flags.BLOCK_PLACE, null);
-        if (explicit == State.DENY || (explicit == null && entersForeignRegion(atDispenser, atTarget))) {
+        if (!machineMayAct(atDispenser, atTarget, Flags.BLOCK_PLACE)) {
             event.setCancelled(true);
         }
     }
@@ -142,7 +188,7 @@ public final class MachineListener implements Listener {
      * Whether {@code atTarget} holds a region {@code atSource} does not, skipping passthrough regions
      * since they protect nothing. A shared domain name opens the target, as for pistons.
      */
-    private static boolean entersForeignRegion(
+    static boolean entersForeignRegion(
         final ApplicableRegionSet atSource, final ApplicableRegionSet atTarget
     ) {
         for (int i = 0, n = atTarget.size(); i < n; i++) {
@@ -166,9 +212,15 @@ public final class MachineListener implements Listener {
         return false;
     }
 
-    private static boolean isFluidBucket(final Material item) {
-        return item == Material.WATER_BUCKET || item == Material.LAVA_BUCKET
-            || item == Material.POWDER_SNOW_BUCKET;
+    /**
+     * Items a dispenser uses on the block in front of it with no event of their own to judge there:
+     * a bucket filling or draining it, bone meal, a lighter, TNT primed in place, a shulker box set down.
+     */
+    private static boolean actsOnTarget(final Material item) {
+        return switch (item) {
+            case WATER_BUCKET, LAVA_BUCKET, POWDER_SNOW_BUCKET, BUCKET, BONE_MEAL, FLINT_AND_STEEL, TNT -> true;
+            default -> Tag.SHULKER_BOXES.isTagged(item);
+        };
     }
 
     /**

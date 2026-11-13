@@ -368,6 +368,42 @@ public final class RegionContainerImpl implements RegionContainer {
     }
 
     /**
+     * Whether any loaded world holds a region besides its global one. A handler that only guards
+     * region borders has nothing to do while this is false.
+     */
+    public boolean anyClaims() {
+        final RegionManager[] snapshot = managers;
+        for (int i = 0; i < snapshot.length; i++) {
+            if (snapshot[i].size() > 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final long[] EVERY_FLAG = everyFlag();
+
+    private static long[] everyFlag() {
+        final long[] mask = new long[64];
+        java.util.Arrays.fill(mask, -1L);
+        return mask;
+    }
+
+    /**
+     * Whether anything at all is configured: a region besides a global one, or a flag on a global
+     * one. While this is false no query can refuse anything, so a per-tick handler can return on it.
+     */
+    public boolean anyRules() {
+        final RegionManager[] snapshot = managers;
+        for (int i = 0; i < snapshot.length; i++) {
+            if (snapshot[i].size() > 1 || snapshot[i].anyRegionUsesAny(EVERY_FLAG)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Every loaded world's manager, as of the last load or unload. Immutable.
      */
     public List<RegionManager> managers() {

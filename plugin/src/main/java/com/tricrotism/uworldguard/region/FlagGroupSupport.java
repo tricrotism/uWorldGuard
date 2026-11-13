@@ -45,7 +45,8 @@ public final class FlagGroupSupport {
         Flags.INVINCIBLE, Flags.GODMODE, Flags.DISABLE_THROW, Flags.DISABLE_COMPLETELY,
         Flags.DENY_ITEM_DROPS, Flags.DENY_ITEM_PICKUP, Flags.BLOCKED_CMDS, Flags.ALLOWED_CMDS,
         Flags.TELEPORT, Flags.TELEPORT_MESSAGE,
-        Flags.DENY_BLOCK_BREAK, Flags.DENY_BLOCK_PLACE, Flags.ALLOW_BLOCK_PLACE,
+        Flags.DENY_BLOCK_BREAK, Flags.ALLOW_BLOCK_BREAK, Flags.DENY_BLOCK_PLACE, Flags.ALLOW_BLOCK_PLACE,
+        Flags.ALLOW_INTERACT, Flags.ALLOW_ENTITY_DAMAGE, Flags.CHAMBERED_ENDERPEARL,
         // ApplicableRegionSet.canBuild
         Flags.BUILD,
         // BuildProtectionListener.onBreak

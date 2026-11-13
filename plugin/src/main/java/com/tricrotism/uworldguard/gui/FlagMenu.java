@@ -3,6 +3,7 @@ package com.tricrotism.uworldguard.gui;
 import com.tricrotism.uworldguard.flags.*;
 import com.tricrotism.uworldguard.region.ProtectedRegion;
 import com.tricrotism.uworldguard.region.RegionEditorImpl;
+import com.tricrotism.uworldguard.region.RegionEdits;
 import com.tricrotism.uworldguard.region.RegionManager;
 import com.tricrotism.uworldguard.text.Messages;
 import net.kyori.adventure.text.Component;
@@ -338,7 +339,7 @@ public final class FlagMenu {
     }
 
     private void onClick(final Flag<?> flag, final Player player, final ClickType clickType, final Item item) {
-        if (MenuItems.denied(player, MenuItems.FLAG) || gone(player)) {
+        if (MenuItems.denied(player, MenuItems.FLAG) || gone(player) || !RegionEdits.mayEditFlag(player, flag)) {
             return;
         }
         if (clickType.isRightClick()) {
@@ -392,7 +393,8 @@ public final class FlagMenu {
                 Placeholder.unparsed("hint", typeHint(flag))),
             current == null ? null : inputOf(flag, current),
             value -> {
-                if (gone(player)) {
+                if (gone(player) || MenuItems.denied(player, MenuItems.FLAG)
+                    || !RegionEdits.mayEditFlag(player, flag)) {
                     return;
                 }
                 final Object parsed = flag.parse(value, player);

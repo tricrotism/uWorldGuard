@@ -9,7 +9,6 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.InvalidConfigurationException;
-import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
@@ -79,7 +78,16 @@ public final class MessageService {
      * for the width of a YAML parse.
      */
     private void load() {
-        final FileConfiguration cfg = YamlConfiguration.loadConfiguration(file);
+        final YamlConfiguration cfg = new YamlConfiguration();
+        try {
+            cfg.load(file);
+        } catch (final InvalidConfigurationException e) {
+            plugin.getLogger().log(Level.SEVERE, "messages.yml is not valid YAML, keeping the messages"
+                + " already loaded", e);
+            return;
+        } catch (final IOException e) {
+            plugin.getLogger().log(Level.WARNING, "Could not read messages.yml", e);
+        }
         this.cooldownMillis = Math.max(0L, cfg.getLong("cooldown-seconds", 3L)) * 1000L;
         final ConfigurationSection section = cfg.getConfigurationSection("messages");
         boolean overrides = false;
@@ -165,7 +173,11 @@ public final class MessageService {
         final YamlConfiguration cfg = new YamlConfiguration();
         try {
             cfg.load(file);
-        } catch (final IOException | InvalidConfigurationException e) {
+        } catch (final InvalidConfigurationException e) {
+            plugin.getLogger().log(Level.WARNING, "messages.yml is not valid YAML, so it was not saved"
+                + " over. Fix the file and run /uwg reload.", e);
+            return;
+        } catch (final IOException e) {
             plugin.getLogger().log(Level.WARNING,
                 "Could not re-read messages.yml before saving; comments in it will be lost", e);
         }

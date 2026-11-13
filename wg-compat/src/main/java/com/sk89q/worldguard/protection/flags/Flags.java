@@ -35,26 +35,26 @@ public final class Flags {
     public static final StateFlag PASSTHROUGH = add(state("passthrough", false));
     public static final SetFlag<String> NONPLAYER_PROTECTION_DOMAINS = add(strings("nonplayer-protection-domains"));
     public static final StateFlag BUILD = add(state("build", true));
-    public static final StateFlag INTERACT = add(state("interact", true));
-    public static final StateFlag BLOCK_BREAK = add(state("block-break", true));
-    public static final StateFlag BLOCK_PLACE = add(state("block-place", true));
-    public static final StateFlag USE = add(state("use", true));
-    public static final StateFlag DAMAGE_ANIMALS = add(state("damage-animals", true));
-    public static final StateFlag CHEST_ACCESS = add(state("chest-access", true));
-    public static final StateFlag RIDE = add(state("ride", true));
-    public static final StateFlag PVP = add(state("pvp", true));
-    public static final StateFlag SLEEP = add(state("sleep", true));
-    public static final StateFlag RESPAWN_ANCHORS = add(state("respawn-anchors", true));
-    public static final StateFlag TNT = add(state("tnt", true));
-    public static final StateFlag PLACE_VEHICLE = add(state("vehicle-place", true));
-    public static final StateFlag DESTROY_VEHICLE = add(state("vehicle-destroy", true));
-    public static final StateFlag LIGHTER = add(state("lighter", true));
-    public static final StateFlag TRAMPLE_BLOCKS = add(state("block-trampling", true));
-    public static final StateFlag FROSTED_ICE_FORM = add(state("frosted-ice-form", true));
-    public static final StateFlag ITEM_FRAME_ROTATE = add(state("item-frame-rotation", true));
-    public static final StateFlag FIREWORK_DAMAGE = add(state("firework-damage", true));
-    public static final StateFlag USE_ANVIL = add(state("use-anvil", true));
-    public static final StateFlag USE_DRIPLEAF = add(state("use-dripleaf", true));
+    public static final StateFlag INTERACT = add(state("interact", false));
+    public static final StateFlag BLOCK_BREAK = add(state("block-break", false));
+    public static final StateFlag BLOCK_PLACE = add(state("block-place", false));
+    public static final StateFlag USE = add(state("use", false));
+    public static final StateFlag DAMAGE_ANIMALS = add(state("damage-animals", false));
+    public static final StateFlag CHEST_ACCESS = add(state("chest-access", false));
+    public static final StateFlag RIDE = add(state("ride", false));
+    public static final StateFlag PVP = add(state("pvp", false));
+    public static final StateFlag SLEEP = add(state("sleep", false));
+    public static final StateFlag RESPAWN_ANCHORS = add(state("respawn-anchors", false));
+    public static final StateFlag TNT = add(state("tnt", false));
+    public static final StateFlag PLACE_VEHICLE = add(state("vehicle-place", false));
+    public static final StateFlag DESTROY_VEHICLE = add(state("vehicle-destroy", false));
+    public static final StateFlag LIGHTER = add(state("lighter", false));
+    public static final StateFlag TRAMPLE_BLOCKS = add(state("block-trampling", false));
+    public static final StateFlag FROSTED_ICE_FORM = add(state("frosted-ice-form", false));
+    public static final StateFlag ITEM_FRAME_ROTATE = add(state("item-frame-rotation", false));
+    public static final StateFlag FIREWORK_DAMAGE = add(state("firework-damage", false));
+    public static final StateFlag USE_ANVIL = add(state("use-anvil", false));
+    public static final StateFlag USE_DRIPLEAF = add(state("use-dripleaf", false));
 
     public static final StateFlag CREEPER_EXPLOSION = add(state("creeper-explosion", true));
     public static final StateFlag ENDERDRAGON_BLOCK_DAMAGE = add(state("enderdragon-block-damage", true));
@@ -71,7 +71,7 @@ public final class Flags {
     public static final StateFlag ENTITY_ITEM_FRAME_DESTROY = add(state("entity-item-frame-destroy", true));
     public static final StateFlag WITHER_DAMAGE = add(state("wither-damage", true));
     public static final StateFlag BREEZE_WIND_CHARGE = add(state("breeze-charge-explosion", true));
-    public static final StateFlag WIND_CHARGE_BURST = add(state("wind-charge-burst", true));
+    public static final StateFlag WIND_CHARGE_BURST = add(state("wind-charge-burst", false));
 
     public static final StateFlag LAVA_FIRE = add(state("lava-fire", true));
     public static final StateFlag LIGHTNING = add(state("lightning", true));
@@ -94,11 +94,10 @@ public final class Flags {
     public static final StateFlag CORAL_FADE = add(state("coral-fade", true));
     public static final StateFlag COPPER_FADE = add(state("copper-fade", true));
     public static final StateFlag MOISTURE_CHANGE = add(state("moisture-change", true));
-    // LOW-CONFIDENCE name — not present in WorldGuard's published flag reference.
     public static final StateFlag LAVA_HARDEN = add(state("lava-harden", true));
 
-    public static final StateFlag ENTRY = add(state("entry", true));
-    public static final StateFlag EXIT = add(state("exit", true));
+    public static final StateFlag ENTRY = add(new StateFlag("entry", true, RegionGroup.NON_MEMBERS));
+    public static final StateFlag EXIT = add(new StateFlag("exit", true, RegionGroup.NON_MEMBERS));
     public static final StateFlag EXIT_VIA_TELEPORT = add(state("exit-via-teleport", true));
     public static final BooleanFlag EXIT_OVERRIDE = add(new BooleanFlag("exit-override", RegionGroup.ALL));
     @Deprecated
@@ -119,8 +118,8 @@ public final class Flags {
 
     public static final StateFlag ENDERPEARL = add(state("enderpearl", true));
     public static final StateFlag CHORUS_TELEPORT = add(state("chorus-fruit-teleport", true));
-    public static final LocationFlag TELE_LOC = add(new LocationFlag("teleport", RegionGroup.ALL));
-    public static final LocationFlag SPAWN_LOC = add(new LocationFlag("spawn", RegionGroup.ALL));
+    public static final LocationFlag TELE_LOC = add(new LocationFlag("teleport", RegionGroup.MEMBERS));
+    public static final LocationFlag SPAWN_LOC = add(new LocationFlag("spawn", RegionGroup.MEMBERS));
     @Deprecated
     public static final StringFlag TELE_MESSAGE = add(new StringFlag("teleport-message", RegionGroup.ALL));
 
@@ -152,7 +151,7 @@ public final class Flags {
     public static final StateFlag PISTONS = add(state("pistons", true));
     public static final StateFlag SEND_CHAT = add(state("send-chat", true));
     public static final StateFlag RECEIVE_CHAT = add(state("receive-chat", true));
-    public static final StateFlag POTION_SPLASH = add(state("potion-splash", true));
+    public static final StateFlag POTION_SPLASH = add(state("potion-splash", false));
 
     /**
      * The names of every built-in flag, in declaration order.

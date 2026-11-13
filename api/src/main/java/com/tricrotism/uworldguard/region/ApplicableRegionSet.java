@@ -267,17 +267,12 @@ public final class ApplicableRegionSet {
     }
 
     /**
-     * Whether {@code region}'s value for {@code flag} applies to {@code subject}.
+     * Whether {@code region}'s value for {@code flag} applies to {@code subject}. Callers test
+     * {@link #groupsActive} once per query first, so a world without qualifiers never gets here.
      */
-    private boolean appliesTo(
+    private static boolean appliesTo(
         final ProtectedRegion region, final Flag<?> flag, final @Nullable UUID subject
     ) {
-        // One volatile read rules out the whole check for the overwhelmingly common case of a world
-        // with no group qualifiers anywhere, keeping flag resolution exactly as cheap as before
-        // qualifiers existed.
-        if (!groupsActive()) {
-            return true;
-        }
         final RegionGroup group = region.getFlagGroup(flag);
         if (group == RegionGroup.ALL) {
             return true;
@@ -285,8 +280,13 @@ public final class ApplicableRegionSet {
         return group.contains(subject == null ? null : region.getAssociation(subject));
     }
 
+    /**
+     * Whether group qualifiers can affect this set's answers. The snapshot holds for a one-lookup set
+     * and for a shared set until the next flag edit. A shared set held past an edit asks the manager,
+     * so a qualifier added since it was built still applies.
+     */
     private boolean groupsActive() {
-        return groupsInUse || owner != null && !fresh() && owner.anyFlagGroups();
+        return groupsInUse || builtAt >= 0 && !fresh() && owner != null && owner.anyFlagGroups();
     }
 
     /**
@@ -312,8 +312,10 @@ public final class ApplicableRegionSet {
             top = applicable.getFirst();
         }
 
+        final boolean groups = buildFlag && groupsActive();
         if (top == null) {
-            final State g = global != null && appliesTo(global, Flags.BUILD, subject) ? global.getFlag(Flags.BUILD) : null;
+            final State g = global != null && (!groups || appliesTo(global, Flags.BUILD, subject))
+                ? global.getFlag(Flags.BUILD) : null;
             return g != State.DENY;
         }
 
@@ -329,8 +331,8 @@ public final class ApplicableRegionSet {
                 break;
             }
             if (buildFlag) {
-                final State v = appliesTo(region, Flags.BUILD, subject) ? region.getFlag(Flags.BUILD) : null;
-                if (v != null) {
+                final State v = region.getFlag(Flags.BUILD);
+                if (v != null && (!groups || appliesTo(region, Flags.BUILD, subject))) {
                     explicit = explicit == State.DENY ? State.DENY : v;
                 }
             }
@@ -466,7 +468,10 @@ public final class ApplicableRegionSet {
         return g != null && !Collections.disjoint(g, candidates);
     }
 
-    /** Whether any contributing set contains the element for this subject. */
+    /**
+     * {@link #flagSetContains(Flag, Object)} as it applies to {@code subject}: a region's set
+     * restricted to a {@link RegionGroup} the subject is not in does not count.
+     */
     public <E> boolean flagSetContains(final Flag<Set<E>> flag, final E element, final @Nullable UUID subject) {
         if (!groupsActive()) {
             return flagSetContains(flag, element);
@@ -476,55 +481,8 @@ public final class ApplicableRegionSet {
         }
         for (int i = 0, n = applicable.size() + 1; i < n; i++) {
             final ProtectedRegion region = i < n - 1 ? applicable.get(i) : global;
-            final Set<E> set = region != null && appliesTo(region, flag, subject) ? region.getFlag(flag) : null;
-            if (set != null && set.contains(element)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** Merge all sets applicable to the subject, without changing union precedence. */
-    public <E> Set<E> flagSetUnion(final Flag<Set<E>> flag, final @Nullable UUID subject) {
-        if (!groupsActive()) {
-            return flagSetUnion(flag);
-        }
-        if (!worldUsesOrUnknown(flag)) {
-            return Set.of();
-        }
-        Set<E> union = null;
-        boolean copied = false;
-        for (int i = 0, n = applicable.size() + 1; i < n; i++) {
-            final ProtectedRegion region = i < n - 1 ? applicable.get(i) : global;
-            final Set<E> set = region != null && appliesTo(region, flag, subject) ? region.getFlag(flag) : null;
-            if (set == null || set.isEmpty()) {
-                continue;
-            }
-            if (union == null) {
-                union = set;
-            } else {
-                if (!copied) {
-                    union = new HashSet<>(union);
-                    copied = true;
-                }
-                union.addAll(set);
-            }
-        }
-        return union == null ? Set.of() : union;
-    }
-
-    /** Whether any set applicable to the subject intersects the candidates. */
-    public <E> boolean flagSetIntersects(final Flag<Set<E>> flag, final Set<E> candidates, final @Nullable UUID subject) {
-        if (!groupsActive()) {
-            return flagSetIntersects(flag, candidates);
-        }
-        if (candidates.isEmpty() || !worldUsesOrUnknown(flag)) {
-            return false;
-        }
-        for (int i = 0, n = applicable.size() + 1; i < n; i++) {
-            final ProtectedRegion region = i < n - 1 ? applicable.get(i) : global;
-            final Set<E> set = region != null && appliesTo(region, flag, subject) ? region.getFlag(flag) : null;
-            if (set != null && !Collections.disjoint(set, candidates)) {
+            final Set<E> set = region == null ? null : region.getFlag(flag);
+            if (set != null && set.contains(element) && appliesTo(region, flag, subject)) {
                 return true;
             }
         }
@@ -601,12 +559,13 @@ public final class ApplicableRegionSet {
         }
         for (int i = 0, n = applicable.size(); i < n; i++) {
             final ProtectedRegion region = applicable.get(i);
-            final T v = appliesTo(region, flag, subject) ? region.getFlag(flag) : null;
-            if (v != null) {
+            final T v = region.getFlag(flag);
+            if (v != null && appliesTo(region, flag, subject)) {
                 return v;
             }
         }
-        return global != null && appliesTo(global, flag, subject) ? global.getFlag(flag) : null;
+        final T g = global != null ? global.getFlag(flag) : null;
+        return g != null && appliesTo(global, flag, subject) ? g : null;
     }
 
     /**
@@ -655,9 +614,10 @@ public final class ApplicableRegionSet {
         if (!worldUsesOrUnknown(flag)) {
             return null;
         }
+        final boolean groups = groupsActive();
         final SpatialIndex.FlagResolver r = resolver;
         if (r != null && r.resolves(flag)) {
-            return r.resolveState(flag, subject, groupsActive());
+            return r.resolveState(flag, subject, groups);
         }
         boolean found = false;
         int bestPriority = 0;
@@ -667,8 +627,8 @@ public final class ApplicableRegionSet {
             if (found && region.getPriority() < bestPriority) {
                 break;
             }
-            final State v = appliesTo(region, flag, subject) ? region.getFlag(flag) : null;
-            if (v != null) {
+            final State v = region.getFlag(flag);
+            if (v != null && (!groups || appliesTo(region, flag, subject))) {
                 if (!found) {
                     found = true;
                     bestPriority = region.getPriority();
@@ -681,7 +641,7 @@ public final class ApplicableRegionSet {
         if (found) {
             return result;
         }
-        if (global == null || !appliesTo(global, flag, subject)) {
+        if (global == null || groups && !appliesTo(global, flag, subject)) {
             return null;
         }
         return global.getFlag(flag);

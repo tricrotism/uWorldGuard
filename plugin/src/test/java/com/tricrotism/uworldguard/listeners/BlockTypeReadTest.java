@@ -67,7 +67,7 @@ class BlockTypeReadTest {
         container.loadAll();
         final MessageService messages = new MessageService(plugin);
         final RegionQuery query = container.createQuery();
-        build = new BuildProtectionListener(query, messages);
+        build = new BuildProtectionListener(query, messages, true);
         workbench = new WorkbenchListener(container, query, messages);
 
         final RegionManager manager = container.get(world);

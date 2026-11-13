@@ -84,7 +84,7 @@ class BreakPlacedOnlyTest {
 
         query = container.createQuery();
         final MessageService messages = new MessageService(plugin);
-        build = new BuildProtectionListener(query, messages);
+        build = new BuildProtectionListener(query, messages, true);
         placed = new PlacedBlocks(plugin, query, messages);
         player = server.addPlayer();
     }

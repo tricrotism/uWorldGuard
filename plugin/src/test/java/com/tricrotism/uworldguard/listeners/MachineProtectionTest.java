@@ -85,14 +85,42 @@ class MachineProtectionTest {
         return region;
     }
 
+    private int locationReads;
+
     private Inventory inventoryAt(final int x, final int y, final int z) {
         final Location location = new Location(world, x, y, z);
         return new InventoryMock(null, 27, InventoryType.CHEST) {
             @Override
             public Location getLocation() {
+                locationReads++;
                 return location;
             }
         };
+    }
+
+    @Test
+    void aTransferOnAServerWithNoClaimsReadsNoLocation() {
+        assertTrue(transfer(inventoryAt(16, 60, 16), inventoryAt(16, 59, 16)));
+
+        assertEquals(0, locationReads, "getLocation allocates, and there is no border to guard");
+    }
+
+    @Test
+    void aTransferOutsideEveryRegionReadsOneLocation() {
+        claim("vault", 60, 80);
+
+        assertTrue(transfer(inventoryAt(500, 64, 500), inventoryAt(500, 63, 500)));
+
+        assertEquals(1, locationReads, "the end acted on is in no region, so the other is not resolved");
+    }
+
+    @Test
+    void aTransferInsideOneRegionReadsBothEndsOnce() {
+        claim("vault", 60, 80);
+
+        assertTrue(transfer(inventoryAt(16, 70, 16), inventoryAt(16, 69, 16)));
+
+        assertEquals(2, locationReads);
     }
 
     private boolean transfer(final Inventory source, final Inventory destination) {
@@ -122,6 +150,41 @@ class MachineProtectionTest {
         claim("vault", 60, 80).setFlag(Flags.HOPPER_TRANSFER, State.DENY);
 
         assertTrue(transfer(inventoryAt(500, 64, 500), inventoryAt(500, 63, 500)));
+    }
+
+    @Test
+    void aHopperBelowAnUnflaggedRegionCannotDrainAChestInside() {
+        claim("vault", 60, 80);
+
+        assertFalse(transfer(inventoryAt(16, 60, 16), inventoryAt(16, 59, 16)),
+            "membership alone protects the chest from a hopper outside");
+    }
+
+    @Test
+    void aHopperInsideTheRegionMayPushItsItemsOut() {
+        claim("vault", 60, 80);
+        final InventoryMoveItemEvent event = new InventoryMoveItemEvent(
+            inventoryAt(16, 60, 16), new ItemStack(Material.DIAMOND), inventoryAt(16, 59, 16), true);
+
+        listener.onHopperTransfer(event);
+
+        assertFalse(event.isCancelled(), "the hopper that moves the item stands in the region");
+    }
+
+    @Test
+    void hoppersInsideOneRegionStillRun() {
+        claim("vault", 60, 80);
+
+        assertTrue(transfer(inventoryAt(16, 70, 16), inventoryAt(16, 69, 16)));
+    }
+
+    @Test
+    void aDispenserOutsideCannotPrimeTntOrDrainTheRegion() {
+        claim("plot", 0, 255);
+
+        assertFalse(dispense(-1, 16, BlockFace.EAST, Material.TNT));
+        assertFalse(dispense(-1, 17, BlockFace.EAST, Material.BUCKET));
+        assertFalse(dispense(-1, 18, BlockFace.EAST, Material.BONE_MEAL));
     }
 
     private boolean dispense(final int x, final int z, final BlockFace facing, final Material item) {

@@ -20,6 +20,10 @@ storage:
         url: "jdbc:sqlite:plugins/uWorldGuard/regions.db"
         user: ""
         password: ""
+        # Seconds to wait for a MySQL or MariaDB server to answer before giving up, so an
+        # unreachable database fails startup quickly instead of hanging it. 0 leaves it to the
+        # driver. Ignored for SQLite, and when the URL already sets connectTimeout.
+        connect-timeout-seconds: 10
 
 selection:
     # Selection wand item when WorldEdit is not installed. With WorldEdit, its wand is used instead.
@@ -129,6 +133,14 @@ regions:
     # false: only flags decide. Member lists are kept but ignored, so a region without a build flag
     #        denies everyone, its owner included. Turning it back on restores the lists as they were.
     membership-grants-trust: true
+    # true:  a player standing where pvp is denied to them cannot place, break, use, hit or shoot
+    #        into a region that sets pvp to allow, so a safezone is not a safe spot to fight from.
+    # false: only the region being acted on decides, as in WorldGuard.
+    safezone-isolation: true
+    # true:  a player who jumps and places a refused block under their feet is pushed back down,
+    #        so the block their client briefly shows cannot be used to climb on air.
+    # false: the block is refused but the player keeps whatever height the client gave them.
+    stop-ghost-climb: true
 
 # Version uWorldGuard reports to other plugins. Some plugins (BetonQuest, PvPManager, ...) only hook
 # into WorldGuard 7+, so by default uWorldGuard reports the WorldGuard version it emulates.
