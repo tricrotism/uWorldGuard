@@ -281,12 +281,12 @@ public final class ApplicableRegionSet {
     }
 
     /**
-     * Whether group qualifiers can affect this set's answers. The snapshot holds for a one-lookup set
-     * and for a shared set until the next flag edit. A shared set held past an edit asks the manager,
-     * so a qualifier added since it was built still applies.
+     * Whether group qualifiers can affect this set's answers. The snapshot holds for a shared set until
+     * the next flag edit. Any other set, the cached empty set included, can be held past an edit, so it
+     * asks the manager and a qualifier added since it was built still applies.
      */
     private boolean groupsActive() {
-        return groupsInUse || builtAt >= 0 && !fresh() && owner != null && owner.anyFlagGroups();
+        return groupsInUse || owner != null && !fresh() && owner.anyFlagGroups();
     }
 
     /**
@@ -312,12 +312,11 @@ public final class ApplicableRegionSet {
             top = applicable.getFirst();
         }
 
-        final boolean groups = buildFlag && groupsActive();
         if (top == null) {
-            final State g = global != null && (!groups || appliesTo(global, Flags.BUILD, subject))
-                ? global.getFlag(Flags.BUILD) : null;
-            return g != State.DENY;
+            final State g = global != null ? global.getFlag(Flags.BUILD) : null;
+            return g != State.DENY || buildFlag && groupsActive() && !appliesTo(global, Flags.BUILD, subject);
         }
+        final boolean groups = buildFlag && groupsActive();
 
         final int topPriority = top.getPriority();
         State explicit = null;
